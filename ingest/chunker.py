@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+# Identifies how documents are chunked. Stored in the index metadata: an index built with a
+# different strategy is stale even if no document changed (see ingest/freshness.py).
+STRATEGY = "words-v1"
+
 
 @dataclass(frozen=True)
 class Chunk:

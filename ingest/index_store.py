@@ -11,7 +11,7 @@ from typing import Any
 import faiss
 import numpy as np
 
-from ingest.chunker import Chunk
+from ingest.chunker import STRATEGY, Chunk
 
 INDEX_FILE = "index.faiss"
 METADATA_FILE = "metadata.json"
@@ -48,6 +48,7 @@ def write_index(
         "built_at": datetime.now(UTC).isoformat(),
         "embedder": embedder_name,
         "dim": int(vectors.shape[1]),
+        "chunking_strategy": STRATEGY,
         "chunk_size": chunk_size,
         "chunk_overlap": chunk_overlap,
         # doc name -> content hash, used later to detect a stale index
