@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     llm_provider: str = "mock"  # mock | openai
     llm_base_url: str = "https://api.groq.com/openai/v1"
     llm_api_key: str = ""
-    llm_model: str = "llama-3.1-8b-instant"
+    llm_model: str = "openai/gpt-oss-20b"
     mock_score_threshold: float = 0.35  # tuned for MiniLM (answerable >= 0.5, unanswerable <= 0.25)
     mock_score_threshold_hash: float = 0.10  # hash-embedder scores are on a much lower scale
     price_per_1k_prompt: float = 0.0
