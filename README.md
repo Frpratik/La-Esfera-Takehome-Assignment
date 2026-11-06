@@ -30,7 +30,7 @@ Flow: question → embed → FAISS top-k → prompt (context only) → LLM → a
 
 ### Main risks
 - **Stale index**: policies change but the index doesn't. Mitigation: hash comparison at startup and in `/health`.
-- **Retrieval confusion**: related docs (expenses vs travel) with similar wording. Mitigation: chunk sizing, overlap, and top-k inspection tooling.
+- **Retrieval confusion**: related docs (expenses vs travel) with similar wording. Mitigation: hybrid dense + BM25 retrieval, a top-1 document metric and a debug script (see [docs/DEBUGGING.md](docs/DEBUGGING.md)).
 - **Hallucination**: the prompt restricts answers to context and requires an exact "I don't know" refusal. The eval measures refusal accuracy.
 - **Offline embedder quality**: the hashing fallback is weaker than MiniLM, so eval numbers differ per embedder. Report which one was used.
 - **Cost/latency drift**: tracked per query in the DB and exposed via `/stats`.
@@ -88,7 +88,9 @@ Build the index with `python -m ingest.build_index` (set `USE_HASH_EMBEDDER=true
 - *Why 30 words of overlap:* a fact cut by a chunk boundary still appears whole in the neighbouring chunk, provided the sentence is shorter than the overlap. More overlap would mostly add duplicate chunks.
 - Both values are env-configurable (`CHUNK_SIZE`, `CHUNK_OVERLAP`) and recorded in the index metadata.
 - Document hashes ignore CRLF vs LF, so a Windows checkout does not look stale in a Linux container.
-- The index stores `built_at`, the embedder name, and a SHA-256 per source document, which later lets us detect a stale index.
+- The index stores `built_at`, the embedder name, the chunking strategy and a SHA-256 per source document. At startup the API compares them with `data/policies`: a stale index is logged, reported by `/health` (`status: "stale"`), and rebuilt when `AUTO_REBUILD_INDEX=true` (the default). `python -m ingest.freshness` runs the same check and exits 1 when stale.
+
+**Retrieval:** `RETRIEVAL_MODE=hybrid` (the default) fuses dense similarity with BM25 via Reciprocal Rank Fusion. Dense-only search could rank the expenses policy above travel for travel reimbursement questions. BM25's exact-term matching separates the two (see [docs/DEBUGGING.md](docs/DEBUGGING.md)). `python -m app.debug "<question>"` prints the top-k chunks with cosine and BM25 scores.
 
 ## Frontend (local dev)
 
@@ -116,17 +118,20 @@ python -m eval.run_eval
 | Metric | What it measures |
 |---|---|
 | Retrieval hit rate | expected document appears in the top-4 sources (answerable questions) |
+| Top-1 document rate | expected document is the first source (catches near-duplicate competition the hit rate misses) |
 | Answer correctness | answer is not a refusal and contains every expected fact (case-insensitive match) |
 | Refusal accuracy | unanswerable questions that got exactly "I don't know" |
 | False refusal rate | answerable questions wrongly refused |
 | Latency / cost | average server-side `latency_ms`; cost is the change in `/stats` total divided by questions |
 
-Results (mock LLM, top-k = 4):
+Results (mock LLM, top-k = 4, hybrid retrieval):
 
-| Setup | Retrieval hit | Correctness | Refusal acc. | False refusals | Avg latency | Cost/query |
-|---|---|---|---|---|---|---|
-| MiniLM embeddings (committed `results.json`) | 100% | 100% | 100% | 0% | 26 ms | $0 |
-| Hash fallback embedder | 100% | 77.8% | 100% | 22.2% | 0.6 ms | $0 |
+| Setup | Retrieval hit | Top-1 doc | Correctness | Refusal acc. | False refusals | Avg latency | Cost/query |
+|---|---|---|---|---|---|---|---|
+| MiniLM embeddings (committed `results.json`) | 100% | 100% | 100% | 100% | 0% | 25 ms | $0 |
+| Hash fallback embedder | 100% | 88.9% | 77.8% | 100% | 22.2% | 1 ms | $0 |
+
+A second set, `eval/regression_questions.json` (8 travel reimbursement and expense questions from the debugging drill), is run with `python -m eval.run_eval --questions eval/regression_questions.json`. With MiniLM: top-1 document 100%, correctness 75%. The two misses are a limit of the keyword-matching mock, explained in [docs/DEBUGGING.md](docs/DEBUGGING.md).
 
 **How to read these numbers**
 - The mock LLM is free, so cost is $0 by construction. Real cost needs a real provider (set the `PRICE_PER_1K_*` variables); this repo has not been run against one.

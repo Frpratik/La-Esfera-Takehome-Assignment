@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-06T14:40:57+00:00",
+  "timestamp": "2026-11-06T15:34:22+00:00",
   "embedder": "sentence-transformers/all-MiniLM-L6-v2",
   "llm_provider": "mock",
   "top_k": 4,
@@ -8,12 +8,13 @@
     "answerable": 9,
     "unanswerable": 3,
     "retrieval_hit_rate": 1.0,
+    "top1_doc_rate": 1.0,
     "answer_correctness": 1.0,
     "refusal_accuracy": 1.0,
     "false_refusal_rate": 0.0,
-    "avg_latency_ms": 26.02,
-    "p50_latency_ms": 17.2,
-    "max_latency_ms": 125.8,
+    "avg_latency_ms": 25.2,
+    "p50_latency_ms": 15.0,
+    "max_latency_ms": 138.5,
     "est_cost_per_query_usd": 0.0
   },
   "cases": [
@@ -29,11 +30,12 @@
         "leave"
       ],
       "hit": true,
+      "top1": true,
       "correct": true,
       "refused": false,
       "passed": true,
       "answer": "Annual leave requests longer than 3 days need at least 10 working days of notice, and requests of 3 days or fewer need at least 2 working days of notice. [leave-0]",
-      "latency_ms": 125.8
+      "latency_ms": 138.5
     },
     {
       "id": "q02",
@@ -42,16 +44,17 @@
       "expected_doc": "it_equipment",
       "retrieved_docs": [
         "it_equipment",
-        "it_equipment",
-        "it_equipment",
-        "onboarding"
+        "expenses",
+        "onboarding",
+        "it_equipment"
       ],
       "hit": true,
+      "top1": true,
       "correct": true,
       "refused": false,
       "passed": true,
       "answer": "The IT Manager approves every laptop replacement request, whether scheduled or early. [it_equipment-0]",
-      "latency_ms": 17.7
+      "latency_ms": 14.9
     },
     {
       "id": "q03",
@@ -59,17 +62,18 @@
       "answerable": true,
       "expected_doc": "expenses",
       "retrieved_docs": [
-        "travel",
         "expenses",
         "expenses",
-        "onboarding"
+        "remote_work",
+        "travel"
       ],
       "hit": true,
+      "top1": true,
       "correct": true,
       "refused": false,
       "passed": true,
       "answer": "Expense claims must be submitted in ExpenseHub within 30 days of the date of purchase. [expenses-0]",
-      "latency_ms": 14.2
+      "latency_ms": 15.2
     },
     {
       "id": "q04",
@@ -78,16 +82,17 @@
       "expected_doc": "travel",
       "retrieved_docs": [
         "travel",
-        "travel",
         "expenses",
-        "expenses"
+        "expenses",
+        "leave"
       ],
       "hit": true,
+      "top1": true,
       "correct": true,
       "refused": false,
       "passed": true,
       "answer": "The hotel limit is $180 per night. [travel-1]",
-      "latency_ms": 16.5
+      "latency_ms": 14.8
     },
     {
       "id": "q05",
@@ -96,16 +101,17 @@
       "expected_doc": "travel",
       "retrieved_docs": [
         "travel",
-        "expenses",
-        "remote_work",
-        "travel"
+        "travel",
+        "travel",
+        "expenses"
       ],
       "hit": true,
+      "top1": true,
       "correct": true,
       "refused": false,
       "passed": true,
-      "answer": "Travel claims must be submitted in TravelDesk within 14 days of returning from the trip. [travel-2]",
-      "latency_ms": 16.7
+      "answer": "Travel claims must be submitted in TravelDesk within 21 days of returning from the trip. [travel-2]",
+      "latency_ms": 16.5
     },
     {
       "id": "q06",
@@ -119,11 +125,12 @@
         "it_equipment"
       ],
       "hit": true,
+      "top1": true,
       "correct": true,
       "refused": false,
       "passed": true,
       "answer": "The standard working model is hybrid: 3 days in the office and 2 days remote each week. [remote_work-0]",
-      "latency_ms": 11.9
+      "latency_ms": 14.3
     },
     {
       "id": "q07",
@@ -137,11 +144,12 @@
         "security"
       ],
       "hit": true,
+      "top1": true,
       "correct": true,
       "refused": false,
       "passed": true,
       "answer": "Security incidents must be reported to the Security Operations Centre (SOC) within 1 hour of discovery. [incident_reporting-0]",
-      "latency_ms": 18.8
+      "latency_ms": 14.6
     },
     {
       "id": "q08",
@@ -151,15 +159,16 @@
       "retrieved_docs": [
         "security",
         "security",
-        "security",
-        "it_equipment"
+        "incident_reporting",
+        "security"
       ],
       "hit": true,
+      "top1": true,
       "correct": true,
       "refused": false,
       "passed": true,
       "answer": "Passwords must be at least 14 characters long. [security-0]",
-      "latency_ms": 19.1
+      "latency_ms": 14.0
     },
     {
       "id": "q09",
@@ -170,9 +179,10 @@
         "onboarding",
         "onboarding",
         "onboarding",
-        "security"
+        "leave"
       ],
       "hit": true,
+      "top1": true,
       "correct": true,
       "refused": false,
       "passed": true,
@@ -186,16 +196,17 @@
       "expected_doc": null,
       "retrieved_docs": [
         "travel",
-        "remote_work",
         "leave",
-        "travel"
+        "incident_reporting",
+        "leave"
       ],
       "hit": null,
+      "top1": null,
       "correct": null,
       "refused": true,
       "passed": true,
       "answer": "I don't know",
-      "latency_ms": 19.0
+      "latency_ms": 13.1
     },
     {
       "id": "q11",
@@ -203,17 +214,18 @@
       "answerable": false,
       "expected_doc": null,
       "retrieved_docs": [
-        "remote_work",
         "travel",
+        "leave",
         "expenses",
-        "it_equipment"
+        "expenses"
       ],
       "hit": null,
+      "top1": null,
       "correct": null,
       "refused": true,
       "passed": true,
       "answer": "I don't know",
-      "latency_ms": 22.0
+      "latency_ms": 15.1
     },
     {
       "id": "q12",
@@ -222,16 +234,17 @@
       "expected_doc": null,
       "retrieved_docs": [
         "remote_work",
-        "security",
+        "remote_work",
         "it_equipment",
-        "remote_work"
+        "expenses"
       ],
       "hit": null,
+      "top1": null,
       "correct": null,
       "refused": true,
       "passed": true,
       "answer": "I don't know",
-      "latency_ms": 14.5
+      "latency_ms": 15.4
     }
   ]
 }
