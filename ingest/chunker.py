@@ -25,7 +25,9 @@ def chunk_text(text: str, size: int, overlap: int) -> list[str]:
     if not 0 <= overlap < size:
         raise ValueError("overlap must satisfy 0 <= overlap < size")
 
-    words = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE).split()
+    # Drop '#' markers and end each heading with a period: otherwise headings glue onto
+    # the next sentence once newlines are flattened ("Annual leave Every employee ...").
+    words = re.sub(r"^#+\s*(.+?)\s*$", r"\1.", text, flags=re.MULTILINE).split()
     # Step is size - overlap: each window re-reads `overlap` words from the previous one,
     # so a sentence cut by a boundary still appears whole in at least one chunk
     # (as long as it is shorter than the overlap).

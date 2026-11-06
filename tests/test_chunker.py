@@ -34,8 +34,8 @@ def test_exact_fit_does_not_add_extra_chunk() -> None:
     assert len(chunk_text(numbered(40), 40, 10)) == 1
 
 
-def test_heading_markers_are_removed() -> None:
-    assert chunk_text("# Title\n## Section\nbody", 10, 0) == ["Title Section body"]
+def test_heading_markers_are_removed_and_headings_end_with_period() -> None:
+    assert chunk_text("# Title\n## Section\nbody", 10, 0) == ["Title. Section. body"]
 
 
 @pytest.mark.parametrize(("size", "overlap"), [(0, 0), (10, 10), (10, -1)])
