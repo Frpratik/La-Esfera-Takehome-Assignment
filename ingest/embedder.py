@@ -94,7 +94,13 @@ class SentenceTransformerEmbedder:
 
         self._model = SentenceTransformer(model_name)
         self.name = model_name
-        self.dim = int(self._model.get_sentence_embedding_dimension())
+        # The method was renamed in newer sentence-transformers; support both to avoid a
+        # deprecation warning without breaking older installs.
+        get_dim = (
+            getattr(self._model, "get_embedding_dimension", None)
+            or self._model.get_sentence_embedding_dimension
+        )
+        self.dim = int(get_dim())
 
     def embed(self, texts: list[str]) -> np.ndarray:
         vectors = self._model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
