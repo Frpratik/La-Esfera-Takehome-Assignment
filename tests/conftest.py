@@ -38,12 +38,13 @@ def index_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def settings(index_dir: Path) -> Settings:
+def settings(index_dir: Path, tmp_path: Path) -> Settings:
     # _env_file=None keeps a developer's local .env from leaking into tests.
     return Settings(
         _env_file=None,
         api_key="test-key",
         index_dir=index_dir,
+        database_url=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
         llm_provider="mock",
         mock_score_threshold_hash=0.10,
     )
