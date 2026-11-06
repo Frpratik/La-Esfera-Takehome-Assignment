@@ -1,4 +1,4 @@
-"""FastAPI application: /ask, /health.
+"""FastAPI application: /ask, /feedback, /stats, /health.
 
 Run with: uvicorn app.main:create_app --factory
 """
@@ -8,16 +8,29 @@ from __future__ import annotations
 import logging
 import secrets
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
-from app.llm import LLMError, MockLLMClient, get_llm_client
-from app.retriever import Retriever
-from app.schemas import AskRequest, AskResponse, Source
+from app.cost import estimate_cost_usd
+from app.db import init_db, make_engine, make_session_factory
+from app.llm import LLMError, LLMResult, MockLLMClient, get_llm_client
+from app.models import Feedback, QueryLog
+from app.retriever import RetrievedChunk, Retriever
+from app.schemas import (
+    AskRequest,
+    AskResponse,
+    FeedbackRequest,
+    FeedbackResponse,
+    Source,
+    StatsResponse,
+)
+from app.stats import compute_stats
 
 logger = logging.getLogger("helpdesk")
 
@@ -28,6 +41,49 @@ def require_api_key(request: Request, x_api_key: str | None = Header(default=Non
     # compare_digest avoids leaking the key length/prefix through response timing.
     if x_api_key is None or not secrets.compare_digest(x_api_key.encode(), expected.encode()):
         raise HTTPException(status_code=401, detail="invalid or missing API key")
+
+
+def get_db(request: Request) -> Iterator[Session]:
+    """Yield a DB session for one request and always close it."""
+    with request.app.state.session_factory() as session:
+        yield session
+
+
+def _log_query(
+    request: Request,
+    question: str,
+    result: LLMResult,
+    chunks: list[RetrievedChunk],
+    sources: list[Source],
+    latency_ms: float,
+) -> int | None:
+    """Persist the query; return its id, or None if the DB is unavailable.
+
+    Logging must not take the service down: the user still gets their answer.
+    """
+    app_state = request.app.state
+    provider = app_state.llm.name
+    row = QueryLog(
+        question=question,
+        answer=result.answer,
+        sources=[s.model_dump() for s in sources],
+        top_score=chunks[0].score if chunks else None,
+        latency_ms=latency_ms,
+        provider=provider,
+        prompt_tokens=result.prompt_tokens,
+        completion_tokens=result.completion_tokens,
+        est_cost_usd=estimate_cost_usd(
+            app_state.settings, provider, result.prompt_tokens, result.completion_tokens
+        ),
+    )
+    try:
+        with app_state.session_factory() as session:
+            session.add(row)
+            session.commit()
+            return row.id
+    except SQLAlchemyError:
+        logger.exception("failed to log query")
+        return None
 
 
 def _load_retriever(settings: Settings) -> Retriever | None:
@@ -45,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        init_db(app.state.engine)
         retriever = _load_retriever(settings)
         llm = get_llm_client(settings)
         # Hash-embedder cosine scores sit on a lower scale than MiniLM's, so the mock's
@@ -61,6 +118,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Policy Helpdesk", lifespan=lifespan)
     app.state.settings = settings
+    app.state.engine = make_engine(settings.database_url)
+    app.state.session_factory = make_session_factory(app.state.engine)
 
     @app.get("/health")
     def health(request: Request) -> JSONResponse:
@@ -94,6 +153,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Sources are always returned (even for "I don't know") so scores can be inspected.
         sources = [Source(doc=c.doc, chunk_id=c.chunk_id, score=round(c.score, 4)) for c in chunks]
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
-        return AskResponse(answer=result.answer, sources=sources, latency_ms=latency_ms)
+        query_id = _log_query(request, body.question, result, chunks, sources, latency_ms)
+        return AskResponse(
+            query_id=query_id, answer=result.answer, sources=sources, latency_ms=latency_ms
+        )
+
+    @app.post("/feedback", response_model=FeedbackResponse, dependencies=[Depends(require_api_key)])
+    def feedback(body: FeedbackRequest, db: Session = Depends(get_db)) -> FeedbackResponse:
+        """Store a thumbs up/down for an answer; re-voting replaces the earlier rating."""
+        if db.get(QueryLog, body.query_id) is None:
+            raise HTTPException(404, f"unknown query_id {body.query_id}")
+        existing = db.query(Feedback).filter(Feedback.query_id == body.query_id).one_or_none()
+        if existing:
+            existing.rating = body.rating
+        else:
+            db.add(Feedback(query_id=body.query_id, rating=body.rating))
+        db.commit()
+        return FeedbackResponse(query_id=body.query_id, rating=body.rating)
+
+    @app.get("/stats", response_model=StatsResponse, dependencies=[Depends(require_api_key)])
+    def stats(db: Session = Depends(get_db)) -> StatsResponse:
+        """Usage, latency percentiles, estimated cost and thumbs-up rate."""
+        return compute_stats(db)
 
     return app
