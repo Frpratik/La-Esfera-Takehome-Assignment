@@ -36,6 +36,16 @@ from app.stats import compute_stats
 logger = logging.getLogger("helpdesk")
 
 
+def _configure_logging() -> None:
+    """Send helpdesk INFO logs to stderr once (uvicorn only configures its own loggers)."""
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+
+
 def require_api_key(request: Request, x_api_key: str | None = Header(default=None)) -> None:
     """Reject requests whose X-API-Key header is missing or wrong (401)."""
     expected = request.app.state.settings.api_key
@@ -99,6 +109,7 @@ def _load_retriever(settings: Settings) -> Retriever | None:
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app. Takes explicit settings so tests can inject their own."""
     settings = settings or get_settings()
+    _configure_logging()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -162,6 +173,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Sources are always returned (even for "I don't know") so scores can be inspected.
         sources = [Source(doc=c.doc, chunk_id=c.chunk_id, score=round(c.score, 4)) for c in chunks]
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
+        # One line per request with the retrieval evidence (chunk ids + scores), so a bad
+        # answer can be traced to retrieval without re-running the question.
+        logger.info(
+            "ask q=%r top=[%s] answer=%r",
+            body.question[:80],
+            ", ".join(f"{c.chunk_id}:{c.score:.2f}" for c in chunks),
+            result.answer[:80],
+        )
         query_id = _log_query(request, body.question, result, chunks, sources, latency_ms)
         return AskResponse(
             query_id=query_id, answer=result.answer, sources=sources, latency_ms=latency_ms
