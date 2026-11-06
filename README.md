@@ -45,6 +45,37 @@ Flow: question → embed → FAISS top-k → prompt (context only) → LLM → a
 | 7 Evaluation | 0:20 |
 | 8 Debugging drill + docs | 0:25 |
 
+## Run it
+
+Requires Docker with Compose v2. No API keys or internet are needed at runtime (mock LLM).
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+| Service | URL |
+|---|---|
+| Chat UI | http://localhost:8080 |
+| API | http://localhost:8000 (docs at `/docs`) |
+| Postgres | internal only (`postgres:5432`) |
+
+Try it:
+
+```bash
+curl -s -X POST localhost:8000/ask -H "Content-Type: application/json" \
+  -H "X-API-Key: change-me" -d '{"question":"What is the hotel limit per night?"}'
+curl -s localhost:8000/stats -H "X-API-Key: change-me"
+```
+
+How the stack starts: Postgres becomes healthy, then the API starts (the FAISS index is already baked into the image; the entrypoint rebuilds it only if missing), then the frontend starts once the API reports healthy.
+
+- **Real LLM:** set `LLM_PROVIDER=openai`, `LLM_API_KEY` and `LLM_MODEL` in `.env` (default base URL is Groq; point `LLM_BASE_URL` at Ollama, e.g. `http://host.docker.internal:11434/v1`), plus the `PRICE_PER_1K_*` values for cost tracking, then `docker compose up -d --build`.
+- **Changing `API_KEY` or `PUBLIC_API_URL`:** the frontend bakes them in at build time, so rebuild it (`docker compose up -d --build frontend`).
+- **Offline build:** the image downloads the MiniLM model at build time. If that fails, the build continues and the index uses the hash embedder (a warning is printed).
+- **Reset data:** `docker compose down -v` also removes the Postgres volume.
+- **Local dev without Docker:** see "Ingestion" and "Frontend (local dev)" below. Tests: `pip install -r requirements-dev.txt && pytest`.
+
 ## Ingestion
 
 Build the index with `python -m ingest.build_index` (set `USE_HASH_EMBEDDER=true` to run fully offline).
