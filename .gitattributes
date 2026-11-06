@@ -1,0 +1,6 @@
+# Normalise to LF so shell scripts and Dockerfiles work on Linux regardless of the checkout OS.
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
