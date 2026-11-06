@@ -1,0 +1,20 @@
+# Keep the API build context small and free of secrets/local state.
+.git
+.gitattributes
+.claude
+.env
+.venv
+venv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+*.db
+*.sqlite
+
+# not needed at runtime (frontend has its own Dockerfile)
+frontend
+tests
+docs
+eval
+data/index
+README.md
