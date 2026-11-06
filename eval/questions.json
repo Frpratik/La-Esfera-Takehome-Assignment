@@ -1,0 +1,86 @@
+[
+  {
+    "id": "q01",
+    "question": "How many days notice do I need for annual leave?",
+    "answerable": true,
+    "expected_doc": "leave",
+    "expected_facts": ["10 working days"]
+  },
+  {
+    "id": "q02",
+    "question": "Who approves a laptop replacement?",
+    "answerable": true,
+    "expected_doc": "it_equipment",
+    "expected_facts": ["IT Manager"]
+  },
+  {
+    "id": "q03",
+    "question": "How long do I have to submit an expense claim?",
+    "answerable": true,
+    "expected_doc": "expenses",
+    "expected_facts": ["30 days"]
+  },
+  {
+    "id": "q04",
+    "question": "What is the hotel limit per night?",
+    "answerable": true,
+    "expected_doc": "travel",
+    "expected_facts": ["$180"]
+  },
+  {
+    "id": "q05",
+    "question": "How long do I have to submit a travel claim after my trip?",
+    "answerable": true,
+    "expected_doc": "travel",
+    "expected_facts": ["14 days"]
+  },
+  {
+    "id": "q06",
+    "question": "How many days a week can I work remotely?",
+    "answerable": true,
+    "expected_doc": "remote_work",
+    "expected_facts": ["2 days remote"]
+  },
+  {
+    "id": "q07",
+    "question": "How soon must a security incident be reported?",
+    "answerable": true,
+    "expected_doc": "incident_reporting",
+    "expected_facts": ["1 hour"]
+  },
+  {
+    "id": "q08",
+    "question": "What is the minimum password length?",
+    "answerable": true,
+    "expected_doc": "security",
+    "expected_facts": ["14 characters"]
+  },
+  {
+    "id": "q09",
+    "question": "What time should new joiners arrive on their first day?",
+    "answerable": true,
+    "expected_doc": "onboarding",
+    "expected_facts": ["9:30"]
+  },
+  {
+    "id": "q10",
+    "question": "What is the capital of France?",
+    "answerable": false,
+    "expected_doc": null,
+    "expected_facts": []
+  },
+  {
+    "id": "q11",
+    "question": "What is the CEO's annual salary?",
+    "answerable": false,
+    "expected_doc": null,
+    "expected_facts": []
+  },
+  {
+    "id": "q12",
+    "question": "Can I bring my dog to the office?",
+    "answerable": false,
+    "expected_doc": null,
+    "expected_facts": []
+  }
+]
