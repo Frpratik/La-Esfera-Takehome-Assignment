@@ -1,5 +1,8 @@
 """Tests for BM25, rank fusion and hybrid retrieval."""
 
+import os
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -142,3 +145,26 @@ def test_unknown_mode_is_rejected(tmp_path: Path) -> None:
     index, metadata = load_index(tmp_path)
     with pytest.raises(ValueError):
         Retriever(index, metadata, StubEmbedder({}), 1, mode="nope")
+
+
+def test_bm25_scores_do_not_depend_on_the_hash_seed() -> None:
+    """Regression: set-order summation made tied scores differ between processes,
+    which flipped a fused ranking between two runs of the same eval."""
+    code = (
+        "from app.bm25 import BM25; "
+        "b = BM25(['a travel claim for flights and hotels', 'hotel and flight costs claimed']); "
+        "print(repr(b.scores('how do I claim back my flight and hotel costs')))"
+    )
+    root = Path(__file__).resolve().parent.parent
+    outputs = {
+        subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=root,
+            env={**os.environ, "PYTHONHASHSEED": seed},
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        for seed in ("1", "2", "3", "4")
+    }
+    assert len(outputs) == 1

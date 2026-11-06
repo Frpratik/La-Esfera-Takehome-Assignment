@@ -48,7 +48,9 @@ class BM25:
 
     def scores(self, query: str) -> list[float]:
         """BM25 score of every document for ``query`` (0.0 when no query term matches)."""
-        terms = set(tokenize(query))
+        # Sorted, not set order: set iteration follows Python's per-process hash seed, so the
+        # float sum (and any tie it decides) would differ between runs of the same query.
+        terms = sorted(set(tokenize(query)))
         out = []
         for freqs, length in zip(self._docs, self._lengths, strict=True):
             score = 0.0

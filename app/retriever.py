@@ -94,7 +94,8 @@ class Retriever:
             # ranking zero-score chunks would just add noise.
             lexical = sorted(
                 (i for i, s in enumerate(bm25_scores) if s > 0),
-                key=lambda i: (-bm25_scores[i], i),
+                # Round so scores equal up to float noise tie, and ties break by chunk position.
+                key=lambda i: (-round(bm25_scores[i], 9), i),
             )
             order = reciprocal_rank_fusion([dense_order, lexical])
         else:
