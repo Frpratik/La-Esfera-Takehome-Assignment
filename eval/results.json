@@ -1,0 +1,237 @@
+{
+  "timestamp": "2026-11-06T14:40:57+00:00",
+  "embedder": "sentence-transformers/all-MiniLM-L6-v2",
+  "llm_provider": "mock",
+  "top_k": 4,
+  "metrics": {
+    "questions": 12,
+    "answerable": 9,
+    "unanswerable": 3,
+    "retrieval_hit_rate": 1.0,
+    "answer_correctness": 1.0,
+    "refusal_accuracy": 1.0,
+    "false_refusal_rate": 0.0,
+    "avg_latency_ms": 26.02,
+    "p50_latency_ms": 17.2,
+    "max_latency_ms": 125.8,
+    "est_cost_per_query_usd": 0.0
+  },
+  "cases": [
+    {
+      "id": "q01",
+      "question": "How many days notice do I need for annual leave?",
+      "answerable": true,
+      "expected_doc": "leave",
+      "retrieved_docs": [
+        "leave",
+        "leave",
+        "leave",
+        "leave"
+      ],
+      "hit": true,
+      "correct": true,
+      "refused": false,
+      "passed": true,
+      "answer": "Annual leave requests longer than 3 days need at least 10 working days of notice, and requests of 3 days or fewer need at least 2 working days of notice. [leave-0]",
+      "latency_ms": 125.8
+    },
+    {
+      "id": "q02",
+      "question": "Who approves a laptop replacement?",
+      "answerable": true,
+      "expected_doc": "it_equipment",
+      "retrieved_docs": [
+        "it_equipment",
+        "it_equipment",
+        "it_equipment",
+        "onboarding"
+      ],
+      "hit": true,
+      "correct": true,
+      "refused": false,
+      "passed": true,
+      "answer": "The IT Manager approves every laptop replacement request, whether scheduled or early. [it_equipment-0]",
+      "latency_ms": 17.7
+    },
+    {
+      "id": "q03",
+      "question": "How long do I have to submit an expense claim?",
+      "answerable": true,
+      "expected_doc": "expenses",
+      "retrieved_docs": [
+        "travel",
+        "expenses",
+        "expenses",
+        "onboarding"
+      ],
+      "hit": true,
+      "correct": true,
+      "refused": false,
+      "passed": true,
+      "answer": "Expense claims must be submitted in ExpenseHub within 30 days of the date of purchase. [expenses-0]",
+      "latency_ms": 14.2
+    },
+    {
+      "id": "q04",
+      "question": "What is the hotel limit per night?",
+      "answerable": true,
+      "expected_doc": "travel",
+      "retrieved_docs": [
+        "travel",
+        "travel",
+        "expenses",
+        "expenses"
+      ],
+      "hit": true,
+      "correct": true,
+      "refused": false,
+      "passed": true,
+      "answer": "The hotel limit is $180 per night. [travel-1]",
+      "latency_ms": 16.5
+    },
+    {
+      "id": "q05",
+      "question": "How long do I have to submit a travel claim after my trip?",
+      "answerable": true,
+      "expected_doc": "travel",
+      "retrieved_docs": [
+        "travel",
+        "expenses",
+        "remote_work",
+        "travel"
+      ],
+      "hit": true,
+      "correct": true,
+      "refused": false,
+      "passed": true,
+      "answer": "Travel claims must be submitted in TravelDesk within 14 days of returning from the trip. [travel-2]",
+      "latency_ms": 16.7
+    },
+    {
+      "id": "q06",
+      "question": "How many days a week can I work remotely?",
+      "answerable": true,
+      "expected_doc": "remote_work",
+      "retrieved_docs": [
+        "remote_work",
+        "remote_work",
+        "remote_work",
+        "it_equipment"
+      ],
+      "hit": true,
+      "correct": true,
+      "refused": false,
+      "passed": true,
+      "answer": "The standard working model is hybrid: 3 days in the office and 2 days remote each week. [remote_work-0]",
+      "latency_ms": 11.9
+    },
+    {
+      "id": "q07",
+      "question": "How soon must a security incident be reported?",
+      "answerable": true,
+      "expected_doc": "incident_reporting",
+      "retrieved_docs": [
+        "incident_reporting",
+        "incident_reporting",
+        "incident_reporting",
+        "security"
+      ],
+      "hit": true,
+      "correct": true,
+      "refused": false,
+      "passed": true,
+      "answer": "Security incidents must be reported to the Security Operations Centre (SOC) within 1 hour of discovery. [incident_reporting-0]",
+      "latency_ms": 18.8
+    },
+    {
+      "id": "q08",
+      "question": "What is the minimum password length?",
+      "answerable": true,
+      "expected_doc": "security",
+      "retrieved_docs": [
+        "security",
+        "security",
+        "security",
+        "it_equipment"
+      ],
+      "hit": true,
+      "correct": true,
+      "refused": false,
+      "passed": true,
+      "answer": "Passwords must be at least 14 characters long. [security-0]",
+      "latency_ms": 19.1
+    },
+    {
+      "id": "q09",
+      "question": "What time should new joiners arrive on their first day?",
+      "answerable": true,
+      "expected_doc": "onboarding",
+      "retrieved_docs": [
+        "onboarding",
+        "onboarding",
+        "onboarding",
+        "security"
+      ],
+      "hit": true,
+      "correct": true,
+      "refused": false,
+      "passed": true,
+      "answer": "New joiners arrive at the reception desk at 9:30 on their first day. [onboarding-0]",
+      "latency_ms": 16.0
+    },
+    {
+      "id": "q10",
+      "question": "What is the capital of France?",
+      "answerable": false,
+      "expected_doc": null,
+      "retrieved_docs": [
+        "travel",
+        "remote_work",
+        "leave",
+        "travel"
+      ],
+      "hit": null,
+      "correct": null,
+      "refused": true,
+      "passed": true,
+      "answer": "I don't know",
+      "latency_ms": 19.0
+    },
+    {
+      "id": "q11",
+      "question": "What is the CEO's annual salary?",
+      "answerable": false,
+      "expected_doc": null,
+      "retrieved_docs": [
+        "remote_work",
+        "travel",
+        "expenses",
+        "it_equipment"
+      ],
+      "hit": null,
+      "correct": null,
+      "refused": true,
+      "passed": true,
+      "answer": "I don't know",
+      "latency_ms": 22.0
+    },
+    {
+      "id": "q12",
+      "question": "Can I bring my dog to the office?",
+      "answerable": false,
+      "expected_doc": null,
+      "retrieved_docs": [
+        "remote_work",
+        "security",
+        "it_equipment",
+        "remote_work"
+      ],
+      "hit": null,
+      "correct": null,
+      "refused": true,
+      "passed": true,
+      "answer": "I don't know",
+      "latency_ms": 14.5
+    }
+  ]
+}

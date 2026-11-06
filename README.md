@@ -103,3 +103,33 @@ npm install && npm run dev
 ```
 
 `VITE_API_BASE_URL` and `VITE_API_KEY` are baked into the JS bundle at build time, so the key is visible to anyone who can load the page. That is acceptable for this take-home; a real deployment would put auth behind a login or a server-side proxy. The API allows only the origins listed in `CORS_ORIGINS`.
+
+## Evaluation
+
+`eval/questions.json` holds 12 questions: 9 answerable (each with an expected document and fact keywords, covering all 8 policies) and 3 unanswerable. `python -m eval.run_eval` asks them through `/ask` (in-process, offline, throwaway database; or `--url` against a running service), prints a table and writes `eval/results.json`.
+
+```bash
+python -m ingest.build_index      # the index must exist
+python -m eval.run_eval
+```
+
+| Metric | What it measures |
+|---|---|
+| Retrieval hit rate | expected document appears in the top-4 sources (answerable questions) |
+| Answer correctness | answer is not a refusal and contains every expected fact (case-insensitive match) |
+| Refusal accuracy | unanswerable questions that got exactly "I don't know" |
+| False refusal rate | answerable questions wrongly refused |
+| Latency / cost | average server-side `latency_ms`; cost is the change in `/stats` total divided by questions |
+
+Results (mock LLM, top-k = 4):
+
+| Setup | Retrieval hit | Correctness | Refusal acc. | False refusals | Avg latency | Cost/query |
+|---|---|---|---|---|---|---|
+| MiniLM embeddings (committed `results.json`) | 100% | 100% | 100% | 0% | 26 ms | $0 |
+| Hash fallback embedder | 100% | 77.8% | 100% | 22.2% | 0.6 ms | $0 |
+
+**How to read these numbers**
+- The mock LLM is free, so cost is $0 by construction. Real cost needs a real provider (set the `PRICE_PER_1K_*` variables); this repo has not been run against one.
+- The set is small and the mock answers by keyword overlap, so 100% shows the pipeline works end to end, not production quality. The two numbers are still informative: the hash fallback finds the right document every time but its lower similarity scores fall under the refusal threshold, so q03 and q08 are wrongly refused. That is why retrieval hit rate and answer correctness are reported separately.
+- The unanswerable questions are caught by the score threshold (0.35 for MiniLM), tuned on observed scores, so a different embedder needs a different threshold.
+- Latency on the first question includes warm-up; the in-process numbers exclude network time.
