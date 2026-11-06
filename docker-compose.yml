@@ -1,0 +1,61 @@
+# Policy Helpdesk: postgres + api + frontend.
+#   cp .env.example .env && docker compose up --build
+name: policy-helpdesk
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-helpdesk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-helpdesk}
+      POSTGRES_DB: ${POSTGRES_DB:-helpdesk}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # $$ stops compose from interpolating; the variables are read inside the container.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    env_file:
+      - path: .env
+        required: false # defaults in the code still let it start without a .env
+    environment:
+      # Overrides DATABASE_URL from .env (which points at SQLite for local dev).
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-helpdesk}:${POSTGRES_PASSWORD:-helpdesk}@postgres:5432/${POSTGRES_DB:-helpdesk}
+    depends_on:
+      postgres:
+        condition: service_healthy # tables are created at startup, so the DB must be ready
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # What the browser calls: the host-published API port, not the compose hostname.
+        VITE_API_BASE_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+        VITE_API_KEY: ${API_KEY:-change-me}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
