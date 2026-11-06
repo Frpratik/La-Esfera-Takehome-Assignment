@@ -32,6 +32,8 @@ from app.schemas import (
     StatsResponse,
 )
 from app.stats import compute_stats
+from ingest.build_index import build_index
+from ingest.freshness import check_freshness
 
 logger = logging.getLogger("helpdesk")
 
@@ -106,6 +108,37 @@ def _load_retriever(settings: Settings) -> Retriever | None:
         return None
 
 
+def _ensure_fresh(retriever: Retriever, settings: Settings) -> Retriever:
+    """Warn if the index is stale and, when enabled, rebuild it and return a fresh retriever.
+
+    Serving an index built from older documents silently returns outdated facts, so the
+    mismatch is always logged; AUTO_REBUILD_INDEX decides whether to repair it automatically.
+    """
+    freshness = check_freshness(
+        retriever.metadata, settings.policies_dir, settings.chunk_size, settings.chunk_overlap
+    )
+    if not freshness.stale:
+        return retriever
+    logger.warning("%s", freshness.describe())
+    if not settings.auto_rebuild_index:
+        logger.warning("AUTO_REBUILD_INDEX is off: serving the stale index")
+        return retriever
+    try:
+        # Reuse the embedder the old index used so scores stay comparable to its thresholds.
+        build_index(
+            settings.policies_dir,
+            settings.index_dir,
+            settings.chunk_size,
+            settings.chunk_overlap,
+            retriever.embedder,
+        )
+    except Exception:
+        logger.exception("automatic index rebuild failed: serving the stale index")
+        return retriever
+    logger.warning("index rebuilt from %s", settings.policies_dir)
+    return _load_retriever(settings) or retriever
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app. Takes explicit settings so tests can inject their own."""
     settings = settings or get_settings()
@@ -115,6 +148,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         init_db(app.state.engine)
         retriever = _load_retriever(settings)
+        if retriever is not None:
+            retriever = _ensure_fresh(retriever, settings)
         llm = get_llm_client(settings)
         # Hash-embedder cosine scores sit on a lower scale than MiniLM's, so the mock's
         # refusal threshold depends on which embedder built the index.
@@ -143,11 +178,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health")
     def health(request: Request) -> JSONResponse:
-        """Liveness/readiness: 503 until an index is loaded, so Docker won't route early."""
+        """Liveness/readiness: 503 until an index is loaded, so Docker won't route early.
+
+        A stale index still answers (HTTP 200) but reports status "stale" and names the
+        documents that changed, so monitoring can alert without taking the service down.
+        """
         retriever: Retriever | None = request.app.state.retriever
+        settings: Settings = request.app.state.settings
+        freshness = (
+            check_freshness(
+                retriever.metadata,
+                settings.policies_dir,
+                settings.chunk_size,
+                settings.chunk_overlap,
+            )
+            if retriever
+            else None
+        )
+        status = "degraded" if retriever is None else "stale" if freshness.stale else "ok"
         body = {
-            "status": "ok" if retriever else "degraded",
+            "status": status,
             "index_loaded": retriever is not None,
+            "index_stale": freshness.stale if freshness else None,
+            "stale_documents": freshness.stale_documents if freshness else [],
             "chunks": retriever.index.ntotal if retriever else 0,
             "embedder": retriever.metadata["embedder"] if retriever else None,
             "index_built_at": retriever.metadata["built_at"] if retriever else None,

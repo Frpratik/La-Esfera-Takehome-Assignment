@@ -16,6 +16,7 @@ from pathlib import Path
 from app.config import get_settings
 from app.llm import MockLLMClient
 from app.retriever import Retriever
+from ingest.freshness import check_freshness
 
 
 def main() -> int:
@@ -41,6 +42,11 @@ def main() -> int:
         f"index   : built_at={meta['built_at']} embedder={meta['embedder']} "
         f"chunks={retriever.index.ntotal}"
     )
+    # Staleness is the first thing to rule out: a stale index answers from old document text.
+    fresh = check_freshness(
+        meta, settings.policies_dir, settings.chunk_size, settings.chunk_overlap
+    )
+    print(f"fresh   : {fresh.describe()}")
     print(f"question: {args.question}\n")
     hits = retriever.retrieve(args.question)
     print(f"{'#':>2} {'score':>6}  {'chunk_id':<22} text")

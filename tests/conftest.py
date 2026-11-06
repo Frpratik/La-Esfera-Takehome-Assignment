@@ -26,24 +26,36 @@ EXPENSES = (
 )
 
 
+CHUNK_SIZE = 60
+CHUNK_OVERLAP = 10
+
+
 @pytest.fixture
-def index_dir(tmp_path: Path) -> Path:
+def policies_dir(tmp_path: Path) -> Path:
     policies = tmp_path / "policies"
     policies.mkdir()
     for name, text in {"travel": TRAVEL, "leave": LEAVE, "expenses": EXPENSES}.items():
         (policies / f"{name}.md").write_text(text, encoding="utf-8")
+    return policies
+
+
+@pytest.fixture
+def index_dir(tmp_path: Path, policies_dir: Path) -> Path:
     out = tmp_path / "index"
-    build_index(policies, out, 60, 10, HashEmbedder())
+    build_index(policies_dir, out, CHUNK_SIZE, CHUNK_OVERLAP, HashEmbedder())
     return out
 
 
 @pytest.fixture
-def settings(index_dir: Path, tmp_path: Path) -> Settings:
+def settings(index_dir: Path, policies_dir: Path, tmp_path: Path) -> Settings:
     # _env_file=None keeps a developer's local .env from leaking into tests.
     return Settings(
         _env_file=None,
         api_key="test-key",
         index_dir=index_dir,
+        policies_dir=policies_dir,
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
         database_url=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
         llm_provider="mock",
         mock_score_threshold_hash=0.10,
