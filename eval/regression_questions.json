@@ -1,0 +1,74 @@
+[
+  {
+    "id": "r01",
+    "question": "How long does it take to get my travel reimbursement paid?",
+    "answerable": true,
+    "expected_doc": "travel",
+    "expected_facts": [
+      "5 business days"
+    ]
+  },
+  {
+    "id": "r02",
+    "question": "What is the deadline to submit a travel reimbursement claim?",
+    "answerable": true,
+    "expected_doc": "travel",
+    "expected_facts": [
+      "21 days"
+    ]
+  },
+  {
+    "id": "r03",
+    "question": "How do I get reimbursed for a business trip?",
+    "answerable": true,
+    "expected_doc": "travel",
+    "expected_facts": [
+      "TravelDesk"
+    ]
+  },
+  {
+    "id": "r04",
+    "question": "How long until my travel claim is reimbursed?",
+    "answerable": true,
+    "expected_doc": "travel",
+    "expected_facts": [
+      "5 business days"
+    ]
+  },
+  {
+    "id": "r05",
+    "question": "How do I claim back my flight and hotel costs?",
+    "answerable": true,
+    "expected_doc": "travel",
+    "expected_facts": [
+      "TravelDesk"
+    ]
+  },
+  {
+    "id": "r06",
+    "question": "Who can grant an exception for a late travel claim?",
+    "answerable": true,
+    "expected_doc": "travel",
+    "expected_facts": [
+      "Head of Department"
+    ]
+  },
+  {
+    "id": "r07",
+    "question": "How long until an approved expense claim is reimbursed?",
+    "answerable": true,
+    "expected_doc": "expenses",
+    "expected_facts": [
+      "10 business days"
+    ]
+  },
+  {
+    "id": "r08",
+    "question": "What is the deadline for submitting an expense claim?",
+    "answerable": true,
+    "expected_doc": "expenses",
+    "expected_facts": [
+      "30 days"
+    ]
+  }
+]
