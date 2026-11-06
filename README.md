@@ -30,7 +30,7 @@ Flow: question → embed → FAISS top-k → prompt (context only) → LLM → a
 
 ### Main risks
 - **Stale index**: policies change but the index doesn't. Mitigation: hash comparison at startup and in `/health`.
-- **Retrieval confusion**: related docs (expenses vs travel) with similar wording. Mitigation: hybrid dense + BM25 retrieval, a top-1 document metric and a debug script (see [docs/DEBUGGING.md](docs/DEBUGGING.md)).
+- **Retrieval confusion**: related docs (expenses vs travel) with similar wording. Mitigation: keep each fact in one policy (no restating another policy's topic), hybrid dense + BM25 retrieval, a top-1 document metric and a debug script (see [docs/DEBUGGING.md](docs/DEBUGGING.md)).
 - **Hallucination**: the prompt restricts answers to context and requires an exact "I don't know" refusal. The eval measures refusal accuracy.
 - **Offline embedder quality**: the hashing fallback is weaker than MiniLM, so eval numbers differ per embedder. Report which one was used.
 - **Cost/latency drift**: tracked per query in the DB and exposed via `/stats`.
@@ -73,7 +73,7 @@ curl -s localhost:8000/stats -H "X-API-Key: change-me"
 
 How the stack starts: Postgres becomes healthy, then the API starts (the FAISS index is already baked into the image; the entrypoint rebuilds it only if missing), then the frontend starts once the API reports healthy.
 
-- **Real LLM:** set `LLM_PROVIDER=openai`, `LLM_API_KEY` and `LLM_MODEL` in `.env` (default base URL is Groq; point `LLM_BASE_URL` at Ollama, e.g. `http://host.docker.internal:11434/v1`), plus the `PRICE_PER_1K_*` values for cost tracking, then `docker compose up -d --build`.
+- **Real LLM:** set `LLM_PROVIDER=openai` and `LLM_API_KEY` in `.env`. The defaults point at Groq with `openai/gpt-oss-20b`; for Ollama set `LLM_BASE_URL=http://host.docker.internal:11434/v1` and its model name. Set `PRICE_PER_1K_PROMPT=0.000075` and `PRICE_PER_1K_COMPLETION=0.0003` (Groq's published gpt-oss-20b prices) for cost tracking, then `docker compose up -d --build`. The client retries rate limits (HTTP 429) with backoff.
 - **Changing `API_KEY` or `PUBLIC_API_URL`:** the frontend bakes them in at build time, so rebuild it (`docker compose up -d --build frontend`).
 - **Offline build:** the image downloads the MiniLM model at build time. If that fails, the build continues and the index uses the hash embedder (a warning is printed).
 - **Reset data:** `docker compose down -v` also removes the Postgres volume.
@@ -90,7 +90,7 @@ Build the index with `python -m ingest.build_index` (set `USE_HASH_EMBEDDER=true
 - Document hashes ignore CRLF vs LF, so a Windows checkout does not look stale in a Linux container.
 - The index stores `built_at`, the embedder name, the chunking strategy and a SHA-256 per source document. At startup the API compares them with `data/policies`: a stale index is logged, reported by `/health` (`status: "stale"`), and rebuilt when `AUTO_REBUILD_INDEX=true` (the default). `python -m ingest.freshness` runs the same check and exits 1 when stale.
 
-**Retrieval:** `RETRIEVAL_MODE=hybrid` (the default) fuses dense similarity with BM25 via Reciprocal Rank Fusion. Dense-only search could rank the expenses policy above travel for travel reimbursement questions. BM25's exact-term matching separates the two (see [docs/DEBUGGING.md](docs/DEBUGGING.md)). `python -m app.debug "<question>"` prints the top-k chunks with cosine and BM25 scores.
+**Retrieval:** `RETRIEVAL_MODE=hybrid` (the default) fuses dense similarity with BM25 via Reciprocal Rank Fusion. BM25's exact-term matching helps separate near-duplicate policies; it is a safeguard, and the main fix for the drill's confusion was removing duplicated content (see [docs/DEBUGGING.md](docs/DEBUGGING.md)). `python -m app.debug "<question>"` prints the top-k chunks with cosine and BM25 scores.
 
 ## Frontend (local dev)
 
@@ -124,17 +124,19 @@ python -m eval.run_eval
 | False refusal rate | answerable questions wrongly refused |
 | Latency / cost | average server-side `latency_ms`; cost is the change in `/stats` total divided by questions |
 
-Results (mock LLM, top-k = 4, hybrid retrieval):
+Results (top-k = 4, hybrid retrieval):
 
 | Setup | Retrieval hit | Top-1 doc | Correctness | Refusal acc. | False refusals | Avg latency | Cost/query |
 |---|---|---|---|---|---|---|---|
-| MiniLM embeddings (committed `results.json`) | 100% | 100% | 100% | 100% | 0% | 25 ms | $0 |
-| Hash fallback embedder | 100% | 88.9% | 77.8% | 100% | 22.2% | 1 ms | $0 |
+| MiniLM + mock LLM (`eval/results.json`) | 100% | 100% | 100% | 100% | 0% | 37 ms | $0 |
+| MiniLM + **Groq `openai/gpt-oss-20b`** (`eval/results_groq.json`) | 100% | 100% | 100% | 100% | 0% | 1.8 s | $0.00010 |
+| Hash fallback embedder + mock LLM | 100% | 88.9% | 77.8% | 100% | 22.2% | 2 ms | $0 |
 
-A second set, `eval/regression_questions.json` (8 travel reimbursement and expense questions from the debugging drill), is run with `python -m eval.run_eval --questions eval/regression_questions.json`. With MiniLM: top-1 document 100%, correctness 75%. The two misses are a limit of the keyword-matching mock, explained in [docs/DEBUGGING.md](docs/DEBUGGING.md).
+A second set, `eval/regression_questions.json` (8 travel reimbursement and expense questions from the debugging drill), is run with `python -m eval.run_eval --questions eval/regression_questions.json`. With MiniLM: top-1 document 100%; correctness 100% with Groq and 75% with the mock. The two mock misses are a limit of its keyword matching, explained in [docs/DEBUGGING.md](docs/DEBUGGING.md). `--rescore <results.json>` re-applies the current scoring to a saved run without new API calls.
 
 **How to read these numbers**
-- The mock LLM is free, so cost is $0 by construction. Real cost needs a real provider (set the `PRICE_PER_1K_*` variables); this repo has not been run against one.
+- The mock LLM is free, so its cost is $0 by construction. The Groq run used Groq's published gpt-oss-20b prices ($0.075 / $0.30 per 1M input/output tokens); the docs page shows no "as of" date, so treat the figure as an estimate. Real-LLM answers vary slightly between runs (temperature 0 is not a determinism guarantee), so its numbers are a snapshot, not a fixed baseline.
+- The live run also found bugs the mock could not: a retired default model, no handling of rate limits, BM25 plural and determinism bugs, and a scorer that rejected correct answers written with markdown or narrow no-break spaces. All are fixed and listed in [docs/DEBUGGING.md](docs/DEBUGGING.md).
 - The set is small and the mock answers by keyword overlap, so 100% shows the pipeline works end to end, not production quality. The two numbers are still informative: the hash fallback finds the right document every time but its lower similarity scores fall under the refusal threshold, so q03 and q08 are wrongly refused. That is why retrieval hit rate and answer correctness are reported separately.
 - The unanswerable questions are caught by the score threshold (0.35 for MiniLM), tuned on observed scores, so a different embedder needs a different threshold.
 - Latency on the first question includes warm-up; the in-process numbers exclude network time.
