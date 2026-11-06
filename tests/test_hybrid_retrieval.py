@@ -16,6 +16,19 @@ from ingest.index_store import load_index, write_index
 
 def test_tokenize_keeps_dollar_amounts_distinct() -> None:
     assert tokenize("Limit is $500, not 500!") == ["limit", "is", "$500", "not", "500"]
+    assert tokenize("$500s") == ["$500"]
+
+
+def test_tokenize_matches_singular_and_plural() -> None:
+    assert tokenize("claims flights hotels costs") == tokenize("claim flight hotel cost")
+    assert tokenize("business is") == ["business", "is"]  # -ss and short words untouched
+
+
+def test_singular_query_scores_a_plural_passage(tmp_path: Path) -> None:
+    """Regression: 'flight and hotel costs' scored ~0 against 'flights, trains and hotels'."""
+    bm25 = BM25(["receipts are required for flights, trains and hotels", "annual leave days"])
+    scores = bm25.scores("claim back my flight and hotel costs")
+    assert scores[0] > 0.5 and scores[1] == 0.0
 
 
 def test_bm25_ranks_the_document_with_the_rare_term_first() -> None:

@@ -9,9 +9,19 @@ from collections import Counter
 _TOKEN = re.compile(r"[a-z0-9$]+")
 
 
+def _normalise(token: str) -> str:
+    # Drop a plural "s" so "claim"/"claims", "hotel"/"hotels" match. Without this, a question
+    # in the singular scored ~0 against the passage that answered it in the plural, and rank
+    # fusion pushed that passage (dense rank 1) out of the top-k. Words of 3 letters or fewer
+    # ("is", "has") and "-ss" words ("business") are left alone.
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
 def tokenize(text: str) -> list[str]:
-    """Lowercase word tokens; '$' is kept so "$500" stays distinct from "500"."""
-    return _TOKEN.findall(text.lower())
+    """Lowercase, plural-normalised word tokens; '$' is kept so "$500" differs from "500"."""
+    return [_normalise(t) for t in _TOKEN.findall(text.lower())]
 
 
 class BM25:
