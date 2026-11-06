@@ -1,7 +1,7 @@
 # Northwind Facilities Expenses Policy
 
 ## Scope
-This policy covers everyday business expenses such as meals, office supplies, software subscriptions, client entertainment and mileage. Costs of overnight business trips, such as flights and hotels, are governed by the Travel Policy and are reimbursed under different rules.
+This policy covers everyday business expenses such as meals, office supplies, software subscriptions, client entertainment and mileage. Overnight business trips are covered by the Travel Policy instead.
 
 ## Submitting claims
 Expense claims must be submitted in ExpenseHub within 30 days of the date of purchase. Claims submitted later than 30 days are rejected unless the Finance Director grants an exception in writing. An itemised receipt is required for every expense above $25. For amounts of $25 or less, a short description is enough.
