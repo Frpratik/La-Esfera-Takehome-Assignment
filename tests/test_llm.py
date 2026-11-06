@@ -125,3 +125,15 @@ def test_mock_ignores_chunks_beyond_top_n() -> None:
     ]
     chunks.append(RetrievedChunk("y", "y-0", "Mileage is reimbursed at $0.58 per mile.", 0.5))
     assert MockLLMClient(0.35, top_n=3).generate("mileage per mile", chunks).answer == REFUSAL
+
+
+def test_mock_matches_singular_question_to_plural_sentence() -> None:
+    chunk = RetrievedChunk(
+        "expenses",
+        "expenses-1",
+        "Northwind Facilities Expenses Policy. "
+        "Approved expense claims are reimbursed by bank transfer within 10 business days.",
+        0.8,
+    )
+    answer = MockLLMClient(0.35).generate("How long does an expense claim take?", [chunk]).answer
+    assert "10 business days" in answer

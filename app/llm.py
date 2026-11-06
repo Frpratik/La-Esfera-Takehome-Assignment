@@ -83,10 +83,17 @@ _STOP = frozenset(
 )
 
 
+def _stem(word: str) -> str:
+    # Crude stemmer for a deterministic offline mock: drop a plural "s" so "claims" matches
+    # "claim" (truncating alone made them differ), then cut to 6 chars so "approves" matches
+    # "approval" and "expenses" matches "expense".
+    if len(word) > 3 and word.endswith("s"):
+        word = word[:-1]
+    return word[:6]
+
+
 def _keywords(text: str) -> set[str]:
-    # Truncating to 6 chars is a crude stemmer so "approves" matches "approval" and
-    # "expenses" matches "expense"; good enough for a deterministic offline mock.
-    return {w[:6] for w in _WORD.findall(text.lower()) if w not in _STOP}
+    return {_stem(w) for w in _WORD.findall(text.lower()) if w not in _STOP}
 
 
 def _split_sentences(text: str) -> list[str]:
