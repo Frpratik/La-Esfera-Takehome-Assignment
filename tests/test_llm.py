@@ -94,7 +94,9 @@ def test_openai_client_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(httpx, "post", boom)
     with pytest.raises(LLMError):
-        OpenAICompatibleClient("http://llm.test", "", "m").generate("q", [CHUNK])
+        OpenAICompatibleClient("http://llm.test", "", "m", sleep=lambda s: None).generate(
+            "q", [CHUNK]
+        )
 
 
 def test_mock_finds_the_sentence_in_a_lower_ranked_chunk() -> None:
@@ -137,3 +139,81 @@ def test_mock_matches_singular_question_to_plural_sentence() -> None:
     )
     answer = MockLLMClient(0.35).generate("How long does an expense claim take?", [chunk]).answer
     assert "10 business days" in answer
+
+
+# --- retries ------------------------------------------------------------------------------
+
+OK_BODY = {"choices": [{"message": {"content": "24 days"}}], "usage": {}}
+
+
+def scripted_post(monkeypatch: pytest.MonkeyPatch, responses: list[httpx.Response]) -> list[str]:
+    """Make httpx.post return ``responses`` in order; returns the list of called URLs."""
+    calls: list[str] = []
+
+    def fake_post(url: str, **kwargs: object) -> httpx.Response:
+        calls.append(url)
+        resp = responses[len(calls) - 1]
+        resp.request = httpx.Request("POST", url)
+        return resp
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    return calls
+
+
+def test_rate_limit_is_retried_using_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    waits: list[float] = []
+    calls = scripted_post(
+        monkeypatch,
+        [httpx.Response(429, headers={"retry-after": "2"}), httpx.Response(200, json=OK_BODY)],
+    )
+    client = OpenAICompatibleClient("http://llm.test", "k", "m", sleep=waits.append)
+    assert client.generate("q", [CHUNK]).answer == "24 days"
+    assert len(calls) == 2 and waits == [2.0]
+
+
+def test_backoff_doubles_without_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    waits: list[float] = []
+    scripted_post(
+        monkeypatch,
+        [httpx.Response(503), httpx.Response(503), httpx.Response(200, json=OK_BODY)],
+    )
+    client = OpenAICompatibleClient("http://llm.test", "k", "m", backoff_s=0.5, sleep=waits.append)
+    client.generate("q", [CHUNK])
+    assert waits == [0.5, 1.0]
+
+
+def test_retry_wait_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
+    waits: list[float] = []
+    scripted_post(
+        monkeypatch,
+        [httpx.Response(429, headers={"retry-after": "600"}), httpx.Response(200, json=OK_BODY)],
+    )
+    OpenAICompatibleClient("http://llm.test", "k", "m", sleep=waits.append).generate("q", [CHUNK])
+    assert waits == [OpenAICompatibleClient.MAX_RETRY_WAIT_S]
+
+
+def test_gives_up_after_max_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = scripted_post(monkeypatch, [httpx.Response(429, text="slow down")] * 3)
+    client = OpenAICompatibleClient(
+        "http://llm.test", "k", "m", max_retries=2, sleep=lambda s: None
+    )
+    with pytest.raises(LLMError, match="429"):
+        client.generate("q", [CHUNK])
+    assert len(calls) == 3
+
+
+def test_client_errors_are_not_retried_and_keep_the_provider_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = {"error": {"message": "The model does not exist", "code": "model_not_found"}}
+    calls = scripted_post(monkeypatch, [httpx.Response(404, json=body)])
+    client = OpenAICompatibleClient("http://llm.test", "k", "gone", sleep=lambda s: None)
+    with pytest.raises(LLMError, match="model_not_found"):
+        client.generate("q", [CHUNK])
+    assert len(calls) == 1
+
+
+def test_malformed_response_raises_llm_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    scripted_post(monkeypatch, [httpx.Response(200, json={"choices": []})])
+    with pytest.raises(LLMError, match="unexpected response"):
+        OpenAICompatibleClient("http://llm.test", "k", "m").generate("q", [CHUNK])

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -144,11 +146,60 @@ class OpenAICompatibleClient:
 
     name = "openai"
 
-    def __init__(self, base_url: str, api_key: str, model: str, timeout: float = 30.0) -> None:
+    # Rate limits and transient server errors are worth retrying; 4xx like 401/404 are not
+    # (a wrong key or a retired model will not fix itself).
+    RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+    MAX_RETRY_WAIT_S = 20.0
+
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        timeout: float = 30.0,
+        max_retries: int = 3,
+        backoff_s: float = 1.0,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.backoff_s = backoff_s
+        self._sleep = sleep  # injectable so tests don't actually wait
+
+    def _retry_delay(self, response: httpx.Response, attempt: int) -> float:
+        """Honour the provider's Retry-After (seconds) if given, else exponential backoff."""
+        header = response.headers.get("retry-after")
+        try:
+            delay = float(header) if header is not None else self.backoff_s * 2**attempt
+        except ValueError:  # Retry-After may also be an HTTP date; fall back to backoff
+            delay = self.backoff_s * 2**attempt
+        return min(delay, self.MAX_RETRY_WAIT_S)
+
+    def _post(self, payload: dict, headers: dict[str, str]) -> httpx.Response:
+        """POST with retries on rate limits / transient errors; raise LLMError otherwise."""
+        url = f"{self.base_url}/chat/completions"
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = httpx.post(url, json=payload, headers=headers, timeout=self.timeout)
+            except httpx.TransportError as exc:  # connection refused, timeouts...
+                if attempt == self.max_retries:
+                    raise LLMError(f"LLM request failed: {exc}") from exc
+                self._sleep(self.backoff_s * 2**attempt)
+                continue
+            if response.status_code in self.RETRYABLE_STATUS and attempt < self.max_retries:
+                self._sleep(self._retry_delay(response, attempt))
+                continue
+            if response.is_error:
+                # Include the provider's message: "model_not_found" is far more useful
+                # than a bare "404 Not Found".
+                raise LLMError(
+                    f"LLM request failed: HTTP {response.status_code}: {response.text[:300]}"
+                )
+            return response
+        raise AssertionError("unreachable")  # the loop always returns or raises
 
     def generate(self, question: str, chunks: list[RetrievedChunk]) -> LLMResult:
         user_prompt = build_user_prompt(question, chunks)
@@ -161,18 +212,12 @@ class OpenAICompatibleClient:
             ],
         }
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        response = self._post(payload, headers)
         try:
-            response = httpx.post(
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
             body = response.json()
             answer = body["choices"][0]["message"]["content"].strip()
-        except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
-            raise LLMError(f"LLM request failed: {exc}") from exc
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
+            raise LLMError(f"LLM returned an unexpected response: {exc}") from exc
         usage = body.get("usage") or {}
         return LLMResult(
             answer,
