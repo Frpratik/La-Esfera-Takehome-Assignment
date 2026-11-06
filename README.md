@@ -55,3 +55,17 @@ Build the index with `python -m ingest.build_index` (set `USE_HASH_EMBEDDER=true
 - Both values are env-configurable (`CHUNK_SIZE`, `CHUNK_OVERLAP`) and recorded in the index metadata.
 - Document hashes ignore CRLF vs LF, so a Windows checkout does not look stale in a Linux container.
 - The index stores `built_at`, the embedder name, and a SHA-256 per source document, which later lets us detect a stale index.
+
+## Frontend (local dev)
+
+```bash
+# terminal 1: API (offline hash embedder + mock LLM)
+USE_HASH_EMBEDDER=true python -m ingest.build_index
+API_KEY=demo-key python -m uvicorn app.main:create_app --factory --port 8000
+
+# terminal 2: UI at http://localhost:5173
+cd frontend && cp .env.example .env   # set VITE_API_KEY=demo-key
+npm install && npm run dev
+```
+
+`VITE_API_BASE_URL` and `VITE_API_KEY` are baked into the JS bundle at build time, so the key is visible to anyone who can load the page. That is acceptable for this take-home; a real deployment would put auth behind a login or a server-side proxy. The API allows only the origins listed in `CORS_ORIGINS`.
