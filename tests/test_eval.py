@@ -14,6 +14,7 @@ from eval.run_eval import (
     format_table,
     is_refusal,
     load_questions,
+    rescore,
     run_eval,
     score_case,
     summarize,
@@ -172,3 +173,41 @@ def test_run_eval_against_the_app(client: TestClient) -> None:
     assert [r.passed for r in results] == [True, True]
     assert results[0].retrieved_docs[0] == "travel"
     assert cost == 0.0  # mock provider is free
+
+
+# --- scoring robustness (found in the live Groq run) ------------------------------------
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "File it in **TravelDesk** within **21 days**.",
+        "File it in TravelDesk within 21\u202fdays.",  # narrow no-break space
+        "File it in TravelDesk within 21\u00a0days.",  # no-break space
+        "File it in `TravelDesk`\nwithin 21   days.",
+    ],
+)
+def test_facts_match_through_markdown_and_unicode_spaces(answer: str) -> None:
+    assert facts_present(answer, ["TravelDesk", "21 days"])
+
+
+def test_rescore_reapplies_scoring_without_calling_the_api() -> None:
+    q = question(expected_facts=["21 days"])
+    saved = {
+        "metrics": {"est_cost_per_query_usd": 0.0001},
+        "cases": [
+            {
+                "id": "t1",
+                "answer": "within 21\u202fdays",
+                "retrieved_docs": ["travel"],
+                "latency_ms": 1000.0,
+                # stale verdicts from an older scorer:
+                "passed": False,
+                "correct": False,
+            }
+        ],
+    }
+    report = rescore(saved, [q])
+    assert report["cases"][0]["passed"] is True
+    assert report["metrics"]["answer_correctness"] == 1.0
+    assert report["metrics"]["est_cost_per_query_usd"] == 0.0001

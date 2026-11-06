@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import statistics
 import sys
 import tempfile
@@ -58,10 +59,20 @@ def is_refusal(answer: str) -> bool:
     return normalised == REFUSAL.lower()
 
 
+def _normalise_text(text: str) -> str:
+    """Lowercase, drop markdown emphasis, and collapse every kind of whitespace to one space.
+
+    Real LLM answers write "**21 days**" or "21 days" (narrow no-break space). A literal
+    substring match marked those correct answers as wrong.
+    """
+    text = text.replace("*", "").replace("`", "").replace("’", "'")
+    return re.sub(r"\s+", " ", text).lower()  # \s also matches U+00A0 and U+202F
+
+
 def facts_present(answer: str, facts: list[str]) -> bool:
-    """Simple fact match: every expected fact appears in the answer (case-insensitive)."""
-    lowered = answer.lower()
-    return all(fact.lower() in lowered for fact in facts)
+    """Simple fact match: every expected fact appears in the normalised answer."""
+    normalised = _normalise_text(answer)
+    return all(_normalise_text(fact) in normalised for fact in facts)
 
 
 def score_case(question: dict[str, Any], response: dict[str, Any]) -> CaseResult:
@@ -183,6 +194,25 @@ def format_table(results: list[CaseResult], metrics: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def rescore(report: dict[str, Any], questions: list[dict[str, Any]]) -> dict[str, Any]:
+    """Re-score a saved report's answers against ``questions`` without calling the API.
+
+    Lets a scoring fix be applied to an expensive (or rate-limited) real-LLM run as-is. The
+    cost per query is kept from the original run, since it does not depend on scoring.
+    """
+    by_id = {q["id"]: q for q in questions}
+    results = []
+    for case in report["cases"]:
+        response = {
+            "answer": case["answer"],
+            "sources": [{"doc": doc} for doc in case["retrieved_docs"]],
+            "latency_ms": case["latency_ms"],
+        }
+        results.append(score_case(by_id[case["id"]], response))
+    cost = report["metrics"]["est_cost_per_query_usd"]
+    return report | {"metrics": summarize(results, cost), "cases": [asdict(r) for r in results]}
+
+
 def _evaluate(
     client: httpx.Client, api_key: str, questions: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -212,6 +242,11 @@ def main() -> int:
     parser.add_argument("--index-dir", type=Path, help="index directory for in-process mode")
     parser.add_argument("--questions", type=Path, default=QUESTIONS_PATH)
     parser.add_argument("--output", type=Path, default=RESULTS_PATH)
+    parser.add_argument(
+        "--rescore",
+        type=Path,
+        help="re-score a saved results file with the current scoring (no API calls)",
+    )
     args = parser.parse_args()
     # LLM answers can contain characters (e.g. U+202F) that a Windows console or a redirected
     # cp1252 stdout cannot encode; that crashed the run while printing the table.
@@ -222,7 +257,10 @@ def main() -> int:
     api_key = args.api_key or settings.api_key
     questions = load_questions(args.questions)
 
-    if args.url:
+    if args.rescore:
+        report = rescore(json.loads(args.rescore.read_text(encoding="utf-8")), questions)
+        print(format_table([CaseResult(**c) for c in report["cases"]], report["metrics"]))
+    elif args.url:
         with httpx.Client(base_url=args.url, timeout=60) as client:
             report = _evaluate(client, api_key, questions)
     else:
