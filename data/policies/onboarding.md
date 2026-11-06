@@ -1,4 +1,4 @@
-# Onboarding Policy
+# Northwind Facilities Onboarding Policy
 
 ## Before the first day
 HR sends the employment paperwork at least 5 business days before the start date and the employee must return it before day one. IT prepares the laptop and delivers it 2 days before the start date for remote joiners. Accounts for email, chat and the HR Portal are created 1 business day before the start date.

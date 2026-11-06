@@ -1,4 +1,4 @@
-# Travel Policy
+# Northwind Facilities Travel Policy
 
 ## Scope
 This policy covers overnight business trips, including flights, trains, hotels, rental cars and travel meals. Everyday expenses that are not part of a business trip are covered by the Expenses Policy, which has different limits and deadlines.

@@ -1,4 +1,4 @@
-# Incident Reporting Policy
+# Northwind Facilities Incident Reporting Policy
 
 ## What counts as an incident
 An incident is any event that harms, or could harm, people, data or systems. This includes security breaches, lost data, service outages, workplace injuries and safety hazards.

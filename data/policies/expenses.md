@@ -1,4 +1,4 @@
-# Expenses Policy
+# Northwind Facilities Expenses Policy
 
 ## Scope
 This policy covers everyday business expenses such as meals, office supplies, software subscriptions, client entertainment and mileage. Costs of overnight business trips, such as flights and hotels, are governed by the Travel Policy and are reimbursed under different rules.

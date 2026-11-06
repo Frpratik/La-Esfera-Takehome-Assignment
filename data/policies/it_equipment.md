@@ -1,10 +1,10 @@
-# IT Equipment Policy
+# Northwind Facilities IT Equipment Policy
 
 ## Standard issue
 Every employee receives a company laptop, a charger and a headset. The standard laptop budget is $1,500. Developers and designers may request a higher-specification model, which must be approved by the IT Manager.
 
 ## Refresh cycle
-Laptops are replaced every 36 months. A laptop may be replaced earlier only if it is damaged beyond repair or fails a hardware diagnostic run by the IT Service Desk.
+Laptops are replaced every 36 months. A laptop may be replaced earlier only if it is damaged beyond repair or fails a hardware diagnostic run by the IT Service Desk. The IT Manager approves every laptop replacement request, whether scheduled or early.
 
 ## Requesting equipment
 Requests are made through the IT Service Portal. Standard items are fulfilled within 5 business days. Non-standard requests need line manager approval and are approved by the IT Manager.

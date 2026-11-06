@@ -1,4 +1,4 @@
-# Information Security Policy
+# Northwind Facilities Information Security Policy
 
 ## Passwords and authentication
 Passwords must be at least 14 characters long. Multi-factor authentication (MFA) is mandatory for all company accounts, including email, VPN and code repositories. Employees must use the company-approved password manager and must never share passwords, even with colleagues or IT staff.

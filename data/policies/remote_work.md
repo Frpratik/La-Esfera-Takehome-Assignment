@@ -1,4 +1,4 @@
-# Remote Work Policy
+# Northwind Facilities Remote Work Policy
 
 ## Hybrid model
 The standard working model is hybrid: 3 days in the office and 2 days remote each week. Teams agree which days are office days, and Tuesday and Wednesday are the default anchor days for all teams.
