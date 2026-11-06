@@ -44,3 +44,14 @@ Flow: question → embed → FAISS top-k → prompt (context only) → LLM → a
 | 6 Docker | 0:25 |
 | 7 Evaluation | 0:20 |
 | 8 Debugging drill + docs | 0:25 |
+
+## Ingestion
+
+Build the index with `python -m ingest.build_index` (set `USE_HASH_EMBEDDER=true` to run fully offline).
+
+**Chunking: 120 words per chunk, 30 words (25%) overlap.**
+- *Why 120 words:* policy sections are short (about 40-60 words), so a chunk holds one to two topics. All-MiniLM-L6-v2 truncates at 256 word-pieces; 120 words is roughly 160 tokens, safely under the cap. Smaller chunks dilute the answer, larger ones mix topics and lower precision.
+- *Why 30 words of overlap:* a fact cut by a chunk boundary still appears whole in the neighbouring chunk, provided the sentence is shorter than the overlap. More overlap would mostly add duplicate chunks.
+- Both values are env-configurable (`CHUNK_SIZE`, `CHUNK_OVERLAP`) and recorded in the index metadata.
+- Document hashes ignore CRLF vs LF, so a Windows checkout does not look stale in a Linux container.
+- The index stores `built_at`, the embedder name, and a SHA-256 per source document, which later lets us detect a stale index.
