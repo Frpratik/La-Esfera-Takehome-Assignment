@@ -62,3 +62,25 @@ def test_missing_index_gives_503_and_degraded_health(settings: Settings, tmp_pat
     with TestClient(create_app(broken)) as c:
         assert c.get("/health").status_code == 503
         assert c.post("/ask", json={"question": "hotel"}, headers=HEADERS).status_code == 503
+
+
+def test_cors_preflight_allows_configured_origin(client: TestClient) -> None:
+    resp = client.options(
+        "/ask",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "x-api-key,content-type",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "x-api-key" in resp.headers["access-control-allow-headers"].lower()
+
+
+def test_cors_blocks_unlisted_origin(client: TestClient) -> None:
+    resp = client.options(
+        "/ask",
+        headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "POST"},
+    )
+    assert "access-control-allow-origin" not in resp.headers
