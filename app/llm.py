@@ -1,0 +1,179 @@
+"""LLM clients: a deterministic offline mock and an OpenAI-compatible HTTP client."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Protocol
+
+import httpx
+
+from app.config import Settings
+from app.prompt import REFUSAL, SYSTEM_PROMPT, build_user_prompt
+from app.retriever import RetrievedChunk
+
+
+class LLMError(RuntimeError):
+    """Raised when the upstream LLM call fails."""
+
+
+@dataclass(frozen=True)
+class LLMResult:
+    """An answer plus token counts used for cost estimation."""
+
+    answer: str
+    prompt_tokens: int
+    completion_tokens: int
+
+
+class LLMClient(Protocol):
+    """Interface every provider implements."""
+
+    name: str
+
+    def generate(self, question: str, chunks: list[RetrievedChunk]) -> LLMResult:
+        """Answer ``question`` from ``chunks`` (or reply with the refusal string)."""
+        ...
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token count (~4 characters per token) for providers that omit usage."""
+    return max(1, len(text) // 4)
+
+
+_WORD = re.compile(r"[a-z0-9$]+")
+_STOP = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "do",
+        "does",
+        "for",
+        "from",
+        "how",
+        "i",
+        "in",
+        "is",
+        "it",
+        "many",
+        "much",
+        "my",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "will",
+        "with",
+        "you",
+        "your",
+    }
+)
+
+
+def _keywords(text: str) -> set[str]:
+    # Truncating to 6 chars is a crude stemmer so "approves" matches "approval" and
+    # "expenses" matches "expense"; good enough for a deterministic offline mock.
+    return {w[:6] for w in _WORD.findall(text.lower()) if w not in _STOP}
+
+
+def _split_sentences(text: str) -> list[str]:
+    # Split on ., ! or ? followed by whitespace; requiring whitespace keeps decimals
+    # like 0.58 intact.
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+
+
+class MockLLMClient:
+    """Deterministic, offline stand-in: returns the best-matching sentence of the top chunk."""
+
+    name = "mock"
+
+    def __init__(self, score_threshold: float) -> None:
+        self.score_threshold = score_threshold
+
+    def generate(self, question: str, chunks: list[RetrievedChunk]) -> LLMResult:
+        prompt_tokens = estimate_tokens(SYSTEM_PROMPT + build_user_prompt(question, chunks))
+        answer = self._answer(question, chunks)
+        return LLMResult(answer, prompt_tokens, estimate_tokens(answer))
+
+    def _answer(self, question: str, chunks: list[RetrievedChunk]) -> str:
+        # Retrieval score gates the answer: a weak top match means the corpus likely
+        # doesn't cover the question, so refuse rather than quote an unrelated sentence.
+        if not chunks or chunks[0].score < self.score_threshold:
+            return REFUSAL
+        wanted = _keywords(question)
+        best, best_overlap = "", 0
+        for sentence in _split_sentences(chunks[0].text):
+            if len(sentence.split()) < 4:  # headings ("Refresh cycle.") are not answers
+                continue
+            overlap = len(wanted & _keywords(sentence))
+            if overlap > best_overlap:  # strict '>' keeps the earliest sentence on ties
+                best, best_overlap = sentence, overlap
+        if not best:
+            return REFUSAL
+        return f"{best} [{chunks[0].chunk_id}]"
+
+
+class OpenAICompatibleClient:
+    """Chat-completions client for OpenAI-compatible servers (Groq, Ollama, OpenAI...)."""
+
+    name = "openai"
+
+    def __init__(self, base_url: str, api_key: str, model: str, timeout: float = 30.0) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self.timeout = timeout
+
+    def generate(self, question: str, chunks: list[RetrievedChunk]) -> LLMResult:
+        user_prompt = build_user_prompt(question, chunks)
+        payload = {
+            "model": self.model,
+            "temperature": 0,  # factual QA: we want repeatable answers
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        try:
+            response = httpx.post(
+                f"{self.base_url}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            body = response.json()
+            answer = body["choices"][0]["message"]["content"].strip()
+        except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+            raise LLMError(f"LLM request failed: {exc}") from exc
+        usage = body.get("usage") or {}
+        return LLMResult(
+            answer,
+            usage.get("prompt_tokens") or estimate_tokens(SYSTEM_PROMPT + user_prompt),
+            usage.get("completion_tokens") or estimate_tokens(answer),
+        )
+
+
+def get_llm_client(settings: Settings) -> LLMClient:
+    """Select the provider from ``LLM_PROVIDER`` (mock | openai)."""
+    if settings.llm_provider == "mock":
+        return MockLLMClient(settings.mock_score_threshold)
+    if settings.llm_provider == "openai":
+        return OpenAICompatibleClient(
+            settings.llm_base_url, settings.llm_api_key, settings.llm_model
+        )
+    raise ValueError(f"unknown LLM_PROVIDER: {settings.llm_provider!r}")
