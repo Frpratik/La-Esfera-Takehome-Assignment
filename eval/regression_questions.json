@@ -23,7 +23,8 @@
     "answerable": true,
     "expected_doc": "travel",
     "expected_facts": [
-      "TravelDesk"
+      "TravelDesk",
+      "21 days"
     ]
   },
   {
@@ -41,7 +42,8 @@
     "answerable": true,
     "expected_doc": "travel",
     "expected_facts": [
-      "TravelDesk"
+      "TravelDesk",
+      "21 days"
     ]
   },
   {
