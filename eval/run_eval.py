@@ -213,6 +213,10 @@ def main() -> int:
     parser.add_argument("--questions", type=Path, default=QUESTIONS_PATH)
     parser.add_argument("--output", type=Path, default=RESULTS_PATH)
     args = parser.parse_args()
+    # LLM answers can contain characters (e.g. U+202F) that a Windows console or a redirected
+    # cp1252 stdout cannot encode; that crashed the run while printing the table.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     settings = get_settings()
     api_key = args.api_key or settings.api_key
