@@ -70,8 +70,8 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>Policy Helpdesk</h1>
-        <p>Answers come only from the company policy documents.</p>
+        <h1>Northwind Facilities Helpdesk</h1>
+        <p>Answers come only from Northwind Facilities policy documents.</p>
       </header>
       <MessageList messages={messages} loading={loading} onRate={rate} onPickExample={setDraft} />
       {error && (

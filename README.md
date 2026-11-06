@@ -1,7 +1,10 @@
 # Policy Helpdesk
 
-A small RAG service that answers employee questions from internal policy documents,
-with a chat UI, Docker setup, an evaluation harness and a debugging write-up.
+An internal helpdesk assistant for **Northwind Facilities**, a mid-sized property management
+firm. Staff ask questions such as "How many days notice do I need for annual leave?" or "Who
+approves a laptop replacement?" and get answers grounded in 8 short policy documents. It is a
+small RAG service with a chat UI, Docker setup, an evaluation harness and a debugging write-up.
+All data is synthetic.
 
 ## Design note
 

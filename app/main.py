@@ -117,7 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.llm = llm
         yield
 
-    app = FastAPI(title="Policy Helpdesk", lifespan=lifespan)
+    app = FastAPI(title="Northwind Facilities Helpdesk", lifespan=lifespan)
     app.state.settings = settings
     # The browser UI runs on another origin, so it needs CORS. Origins are an explicit
     # allow-list from env (never "*"), because requests carry an API key header.
