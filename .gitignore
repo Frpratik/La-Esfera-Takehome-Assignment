@@ -1,0 +1,28 @@
+# secrets / local config
+.env
+.claude/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# node
+node_modules/
+frontend/dist/
+
+# generated index + local DBs
+data/index/
+*.faiss
+*.sqlite
+*.db
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
