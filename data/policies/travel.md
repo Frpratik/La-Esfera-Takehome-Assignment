@@ -19,7 +19,7 @@ While travelling, employees may claim a meal allowance of $55 per day, paid as a
 Trips costing up to $2,000 are approved by the line manager. Trips costing more than $2,000 must also be approved by the Head of Department. International trips additionally require a security briefing from the IT Security team before departure.
 
 ## Reimbursement
-Travel claims must be submitted in TravelDesk within 14 days of returning from the trip. Claims submitted after 14 days are rejected. Approved travel claims are reimbursed within 7 business days. Receipts are required for flights, trains and hotels.
+Travel claims must be submitted in TravelDesk within 21 days of returning from the trip. Claims submitted after 21 days are rejected unless the Head of Department grants an exception in writing. Approved travel claims are reimbursed by bank transfer within 5 business days of final approval. Receipts are required for flights, trains and hotels.
 
 ## Cancellations and rental cars
 Cancel bookings at least 24 hours before departure to avoid unrecoverable fees. Rental cars are allowed only when public transport is not practical and the line manager has agreed in advance.

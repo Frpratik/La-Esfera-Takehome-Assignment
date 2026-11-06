@@ -32,7 +32,7 @@
     "question": "How long do I have to submit a travel claim after my trip?",
     "answerable": true,
     "expected_doc": "travel",
-    "expected_facts": ["14 days"]
+    "expected_facts": ["21 days"]
   },
   {
     "id": "q06",
