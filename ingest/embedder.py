@@ -101,6 +101,17 @@ class SentenceTransformerEmbedder:
         return np.asarray(vectors, dtype=np.float32)
 
 
+def embedder_from_name(name: str) -> Embedder:
+    """Recreate the embedder recorded in index metadata.
+
+    Queries must be embedded with the same model that built the index, otherwise the
+    vectors live in different spaces and scores are meaningless.
+    """
+    if name.startswith("hash-"):
+        return HashEmbedder(dim=int(name.split("-", 1)[1]))
+    return SentenceTransformerEmbedder(name)
+
+
 def get_embedder(model_name: str, use_hash: bool) -> Embedder:
     """Return the configured embedder, falling back to hashing if the model can't load."""
     if use_hash:
