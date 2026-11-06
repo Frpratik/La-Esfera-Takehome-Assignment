@@ -96,12 +96,14 @@ def _split_sentences(text: str) -> list[str]:
 
 
 class MockLLMClient:
-    """Deterministic, offline stand-in: returns the best-matching sentence of the top chunk."""
+    """Deterministic, offline stand-in: returns the best-matching sentence from the top chunks."""
 
     name = "mock"
 
-    def __init__(self, score_threshold: float) -> None:
+    def __init__(self, score_threshold: float, top_n: int = 3) -> None:
         self.score_threshold = score_threshold
+        # How many of the best-ranked chunks to search for the answer sentence.
+        self.top_n = top_n
 
     def generate(self, question: str, chunks: list[RetrievedChunk]) -> LLMResult:
         prompt_tokens = estimate_tokens(SYSTEM_PROMPT + build_user_prompt(question, chunks))
@@ -114,16 +116,20 @@ class MockLLMClient:
         if not chunks or chunks[0].score < self.score_threshold:
             return REFUSAL
         wanted = _keywords(question)
-        best, best_overlap = "", 0
-        for sentence in _split_sentences(chunks[0].text):
-            if len(sentence.split()) < 4:  # headings ("Refresh cycle.") are not answers
-                continue
-            overlap = len(wanted & _keywords(sentence))
-            if overlap > best_overlap:  # strict '>' keeps the earliest sentence on ties
-                best, best_overlap = sentence, overlap
+        best, best_chunk, best_overlap = "", chunks[0], 0
+        # The top chunk is not always the one holding the fact (a leave chunk may rank first
+        # while the notice rule sits in the next one), so search the top few chunks.
+        for chunk in chunks[: self.top_n]:
+            for sentence in _split_sentences(chunk.text):
+                if len(sentence.split()) < 4:  # headings ("Refresh cycle.") are not answers
+                    continue
+                overlap = len(wanted & _keywords(sentence))
+                # strict '>' keeps the earlier (higher-ranked) chunk and sentence on ties
+                if overlap > best_overlap:
+                    best, best_chunk, best_overlap = sentence, chunk, overlap
         if not best:
             return REFUSAL
-        return f"{best} [{chunks[0].chunk_id}]"
+        return f"{best} [{best_chunk.chunk_id}]"
 
 
 class OpenAICompatibleClient:

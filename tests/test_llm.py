@@ -95,3 +95,33 @@ def test_openai_client_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(httpx, "post", boom)
     with pytest.raises(LLMError):
         OpenAICompatibleClient("http://llm.test", "", "m").generate("q", [CHUNK])
+
+
+def test_mock_finds_the_sentence_in_a_lower_ranked_chunk() -> None:
+    first = RetrievedChunk("leave", "leave-0", "Employees receive 24 days of paid leave.", 0.8)
+    second = RetrievedChunk(
+        "leave",
+        "leave-1",
+        "Annual leave requests longer than 3 days need 10 working days of notice.",
+        0.6,
+    )
+    answer = MockLLMClient(0.35).generate("How many days notice for annual leave?", [first, second])
+    assert answer.answer == (
+        "Annual leave requests longer than 3 days need 10 working days of notice. [leave-1]"
+    )
+
+
+def test_mock_prefers_higher_ranked_chunk_on_ties() -> None:
+    a = RetrievedChunk("a", "a-0", "The hotel limit is $180 per night here.", 0.8)
+    b = RetrievedChunk("b", "b-0", "The hotel limit is $250 per night there.", 0.7)
+    answer = MockLLMClient(0.35).generate("hotel limit per night", [a, b]).answer
+    assert answer.endswith("[a-0]")
+
+
+def test_mock_ignores_chunks_beyond_top_n() -> None:
+    chunks = [
+        RetrievedChunk("x", f"x-{i}", "Unrelated filler sentence about nothing.", 0.9 - i / 10)
+        for i in range(3)
+    ]
+    chunks.append(RetrievedChunk("y", "y-0", "Mileage is reimbursed at $0.58 per mile.", 0.5))
+    assert MockLLMClient(0.35, top_n=3).generate("mileage per mile", chunks).answer == REFUSAL
