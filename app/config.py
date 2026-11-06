@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     chunk_size: int = 120
     chunk_overlap: int = 30
     top_k: int = 4
+    # dense = embeddings only; hybrid = embeddings + BM25 fused with reciprocal rank fusion.
+    retrieval_mode: str = "hybrid"
     # Rebuild the index at startup if documents changed since it was built (else just warn).
     auto_rebuild_index: bool = True
 

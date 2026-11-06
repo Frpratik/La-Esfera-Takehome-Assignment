@@ -120,7 +120,7 @@ class MockLLMClient:
     def _answer(self, question: str, chunks: list[RetrievedChunk]) -> str:
         # Retrieval score gates the answer: a weak top match means the corpus likely
         # doesn't cover the question, so refuse rather than quote an unrelated sentence.
-        if not chunks or chunks[0].score < self.score_threshold:
+        if not chunks or max(c.score for c in chunks) < self.score_threshold:
             return REFUSAL
         wanted = _keywords(question)
         best, best_chunk, best_overlap = "", chunks[0], 0

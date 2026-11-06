@@ -80,7 +80,7 @@ def _log_query(
         question=question,
         answer=result.answer,
         sources=[s.model_dump() for s in sources],
-        top_score=chunks[0].score if chunks else None,
+        top_score=max((c.score for c in chunks), default=None),
         latency_ms=latency_ms,
         provider=provider,
         prompt_tokens=result.prompt_tokens,
@@ -102,7 +102,7 @@ def _log_query(
 def _load_retriever(settings: Settings) -> Retriever | None:
     """Load the index, or return None (service starts degraded) if it isn't available."""
     try:
-        return Retriever.from_dir(settings.index_dir, settings.top_k)
+        return Retriever.from_dir(settings.index_dir, settings.top_k, settings.retrieval_mode)
     except Exception as exc:  # missing/corrupt index, embedder failure...
         logger.warning("index not loaded from %s: %s", settings.index_dir, exc)
         return None

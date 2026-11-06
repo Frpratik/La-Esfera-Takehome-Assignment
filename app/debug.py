@@ -29,10 +29,16 @@ def main() -> int:
     parser.add_argument("--k", type=int, default=6, help="how many chunks to show")
     parser.add_argument("--index-dir", type=Path, default=settings.index_dir)
     parser.add_argument("--full", action="store_true", help="print whole chunk text")
+    parser.add_argument(
+        "--mode",
+        choices=["dense", "hybrid"],
+        default=settings.retrieval_mode,
+        help="retrieval mode (default: RETRIEVAL_MODE)",
+    )
     args = parser.parse_args()
 
     try:
-        retriever = Retriever.from_dir(args.index_dir, args.k)
+        retriever = Retriever.from_dir(args.index_dir, args.k, args.mode)
     except FileNotFoundError:
         print(f"no index in {args.index_dir}; run: python -m ingest.build_index", file=sys.stderr)
         return 1
@@ -47,12 +53,13 @@ def main() -> int:
         meta, settings.policies_dir, settings.chunk_size, settings.chunk_overlap
     )
     print(f"fresh   : {fresh.describe()}")
+    print(f"mode    : {args.mode}")
     print(f"question: {args.question}\n")
     hits = retriever.retrieve(args.question)
-    print(f"{'#':>2} {'score':>6}  {'chunk_id':<22} text")
+    print(f"{'#':>2} {'cosine':>6} {'bm25':>6}  {'chunk_id':<22} text")
     for rank, hit in enumerate(hits, start=1):
         text = hit.text if args.full else hit.text.replace("\n", " ")[:100] + "..."
-        print(f"{rank:>2} {hit.score:>6.3f}  {hit.chunk_id:<22} {text}")
+        print(f"{rank:>2} {hit.score:>6.3f} {hit.bm25:>6.2f}  {hit.chunk_id:<22} {text}")
 
     # Use the same refusal threshold the API would pick for this embedder.
     hashed = meta["embedder"].startswith("hash-")
