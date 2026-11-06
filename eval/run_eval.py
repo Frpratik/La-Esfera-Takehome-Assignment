@@ -39,6 +39,7 @@ class CaseResult:
     expected_doc: str | None
     retrieved_docs: list[str]
     hit: bool | None  # expected doc in the retrieved sources (answerable only)
+    top1: bool | None  # expected doc is the FIRST source: ranking quality (answerable only)
     correct: bool | None  # answered, with every expected fact present (answerable only)
     refused: bool
     passed: bool  # answerable: correct; unanswerable: refused
@@ -72,11 +73,12 @@ def score_case(question: dict[str, Any], response: dict[str, Any]) -> CaseResult
 
     if answerable:
         hit: bool | None = question["expected_doc"] in docs
+        top1: bool | None = bool(docs) and docs[0] == question["expected_doc"]
         # A refusal never counts as correct, even if it happened to contain a fact string.
         correct: bool | None = (not refused) and facts_present(answer, question["expected_facts"])
         passed = bool(correct)
     else:
-        hit, correct = None, None
+        hit, top1, correct = None, None, None
         passed = refused
 
     return CaseResult(
@@ -86,6 +88,7 @@ def score_case(question: dict[str, Any], response: dict[str, Any]) -> CaseResult
         expected_doc=question["expected_doc"],
         retrieved_docs=docs,
         hit=hit,
+        top1=top1,
         correct=correct,
         refused=refused,
         passed=passed,
@@ -109,6 +112,9 @@ def summarize(results: list[CaseResult], cost_per_query: float) -> dict[str, Any
         "unanswerable": len(unanswerable),
         # Did retrieval put the right document in the top-k? Independent of the LLM.
         "retrieval_hit_rate": _rate([bool(r.hit) for r in answerable]),
+        # Is the right document ranked FIRST? Near-duplicate policies can sit in the top-k yet
+        # still lose the top spot, which the hit rate above cannot see.
+        "top1_doc_rate": _rate([bool(r.top1) for r in answerable]),
         # Did the final answer contain the expected facts?
         "answer_correctness": _rate([bool(r.correct) for r in answerable]),
         # Did the system refuse the questions it should not be able to answer?
@@ -166,6 +172,7 @@ def format_table(results: list[CaseResult], metrics: dict[str, Any]) -> str:
     lines += [
         "",
         f"Retrieval hit rate : {pct(metrics['retrieval_hit_rate'])}",
+        f"Top-1 doc rate     : {pct(metrics['top1_doc_rate'])}",
         f"Answer correctness : {pct(metrics['answer_correctness'])}",
         f"Refusal accuracy   : {pct(metrics['refusal_accuracy'])}",
         f"False refusal rate : {pct(metrics['false_refusal_rate'])}",

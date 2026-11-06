@@ -32,9 +32,13 @@ def test_question_set_shape() -> None:
     assert len({q["id"] for q in questions}) == 12
 
 
-def test_expected_docs_and_facts_exist_in_the_policies() -> None:
+REGRESSION = Path(__file__).resolve().parent.parent / "eval" / "regression_questions.json"
+
+
+@pytest.mark.parametrize("path", [None, REGRESSION], ids=["main", "regression"])
+def test_expected_docs_and_facts_exist_in_the_policies(path: Path | None) -> None:
     """Guards against the ground truth drifting away from the documents."""
-    for q in load_questions():
+    for q in load_questions(path) if path else load_questions():
         if not q["answerable"]:
             assert q["expected_doc"] is None and q["expected_facts"] == []
             continue
@@ -89,7 +93,12 @@ def response(answer: str, docs: list[str], latency: float = 5.0) -> dict[str, An
 
 def test_correct_answer_with_right_doc_passes() -> None:
     r = score_case(question(), response("Limit is $180 [travel-0]", ["travel", "expenses"]))
-    assert (r.hit, r.correct, r.refused, r.passed) == (True, True, False, True)
+    assert (r.hit, r.top1, r.correct, r.refused, r.passed) == (True, True, True, False, True)
+
+
+def test_right_doc_ranked_second_is_a_hit_but_not_top1() -> None:
+    r = score_case(question(), response("Limit is $180", ["expenses", "travel"]))
+    assert (r.hit, r.top1) == (True, False)
 
 
 def test_right_doc_but_missing_fact_is_a_retrieval_hit_but_not_correct() -> None:
@@ -111,7 +120,7 @@ def test_unanswerable_passes_only_when_refused() -> None:
     q = question(answerable=False, expected_doc=None, expected_facts=[])
     assert score_case(q, response("I don't know", ["leave"])).passed is True
     wrong = score_case(q, response("Paris", ["leave"]))
-    assert (wrong.passed, wrong.hit, wrong.correct) == (False, None, None)
+    assert (wrong.passed, wrong.hit, wrong.top1, wrong.correct) == (False, None, None, None)
 
 
 def test_summarize_computes_each_metric() -> None:
@@ -125,6 +134,7 @@ def test_summarize_computes_each_metric() -> None:
     ]
     m = summarize(results, cost_per_query=0.002)
     assert m["retrieval_hit_rate"] == 0.5
+    assert m["top1_doc_rate"] == 0.5
     assert m["answer_correctness"] == 0.5
     assert m["refusal_accuracy"] == 0.5
     assert m["false_refusal_rate"] == 0.5
