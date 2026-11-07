@@ -89,3 +89,14 @@ def test_feedback_ratings_are_counted(client: TestClient) -> None:
     client.post("/feedback", json={"query_id": qid, "rating": "down"}, headers=HEADERS)
     assert sample(client, "helpdesk_feedback_total", rating="down") == 1
     assert sample(client, "helpdesk_feedback_total", rating="up") == 0
+
+
+def test_known_label_values_start_at_zero(client: TestClient) -> None:
+    """So Prometheus sees the 0 -> 1 step and rate()/increase() count the first event."""
+    text = client.get("/metrics").text
+    for line in (
+        'helpdesk_answers_total{outcome="refused"} 0.0',
+        'helpdesk_cache_requests_total{result="hit"} 0.0',
+        'helpdesk_feedback_total{rating="down"} 0.0',
+    ):
+        assert line in text

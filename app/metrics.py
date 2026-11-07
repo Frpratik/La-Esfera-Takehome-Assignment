@@ -79,6 +79,17 @@ class Metrics:
             registry=self.registry,
         )
 
+        # Create every known label value at 0 up front. A labelled series otherwise appears only
+        # at its first event, and rate()/increase() in Prometheus/Grafana would miss that event.
+        for outcome in ("answered", "refused", "llm_error"):
+            self.answers.labels(outcome)
+        for kind in ("prompt", "completion"):
+            self.llm_tokens.labels(kind)
+        for rating in ("up", "down"):
+            self.feedback.labels(rating)
+        for result in ("hit", "miss", "error"):
+            self.cache.labels(result)
+
     def render(self) -> tuple[bytes, str]:
         """Serialise every metric in the Prometheus text exposition format."""
         return generate_latest(self.registry), CONTENT_TYPE_LATEST
