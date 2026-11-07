@@ -15,7 +15,7 @@ It is a small, complete RAG service: ingestion pipeline, FastAPI backend, a chat
 
 ## At a glance
 
-| | |
+| What | Result |
 |---|---|
 | **Answer correctness** (12-question eval) | **100%** with the offline mock and with a real LLM (Groq `openai/gpt-oss-20b`) |
 | **Refusals** on unanswerable questions | **100%** say exactly "I don't know" |
