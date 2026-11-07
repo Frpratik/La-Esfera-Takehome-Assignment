@@ -1,0 +1,111 @@
+# Alert rules for the Northwind helpdesk API. Rationale for each rule: docs/OBSERVABILITY.md.
+# Validate with: promtool check rules ops/prometheus/alerts.yml
+groups:
+  - name: helpdesk-availability
+    rules:
+      - alert: HelpdeskDown
+        expr: up{job="helpdesk"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Helpdesk API is not answering scrapes"
+          description: "Prometheus could not scrape {{ $labels.instance }} for 2 minutes."
+
+      - alert: HelpdeskIndexNotLoaded
+        expr: helpdesk_index_loaded == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "No search index loaded: every /ask returns 503"
+
+      - alert: HelpdeskHighErrorRate
+        expr: |
+          sum(rate(helpdesk_http_requests_total{route="/ask", status=~"5.."}[5m]))
+            / sum(rate(helpdesk_http_requests_total{route="/ask"}[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "More than 5% of /ask requests are failing"
+
+      - alert: HelpdeskLLMProviderFailing
+        expr: |
+          sum(rate(helpdesk_answers_total{outcome="llm_error"}[5m]))
+            / sum(rate(helpdesk_answers_total[5m])) > 0.10
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "More than 10% of answers fail at the LLM provider (after retries)"
+          description: "Check the provider status page, the API key and the model name."
+
+  - name: helpdesk-quality
+    rules:
+      - alert: HelpdeskSlowAnswers
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(helpdesk_http_request_duration_seconds_bucket{route="/ask"}[10m]))
+          ) > 5
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "p95 /ask latency above 5 s for 15 minutes"
+
+      - alert: HelpdeskIndexStale
+        expr: helpdesk_index_stale == 1
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Search index is older than the policy documents"
+          description: "Answers may cite outdated policy. Restart the API (auto-rebuild) or run python -m ingest.build_index."
+
+      - alert: HelpdeskRefusalSpike
+        expr: |
+          sum(rate(helpdesk_answers_total{outcome="refused"}[30m]))
+            / sum(rate(helpdesk_answers_total[30m])) > 0.40
+          and sum(rate(helpdesk_answers_total[30m])) > 0.01
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "More than 40% of questions answered \"I don't know\""
+          description: "Retrieval may be broken, or staff are asking about topics the policies do not cover."
+
+      - alert: HelpdeskThumbsDownSpike
+        expr: |
+          sum(increase(helpdesk_feedback_total{rating="down"}[1d]))
+            / sum(increase(helpdesk_feedback_total[1d])) > 0.30
+          and sum(increase(helpdesk_feedback_total[1d])) >= 20
+        labels:
+          severity: ticket
+        annotations:
+          summary: "More than 30% thumbs-down over the last day"
+
+  - name: helpdesk-cost-security
+    rules:
+      - alert: HelpdeskLLMSpendHigh
+        expr: increase(helpdesk_llm_cost_usd_total[1d]) > 5
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Estimated LLM spend above $5 in the last 24 hours"
+
+      - alert: HelpdeskAuthFailures
+        expr: sum(rate(helpdesk_http_requests_total{status="401"}[10m])) > 0.5
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Sustained 401s: a misconfigured client or someone guessing API keys"
+
+      - alert: HelpdeskCacheErrors
+        expr: sum(rate(helpdesk_cache_requests_total{result="error"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Answer cache (Redis) is failing; requests still work, uncached"
