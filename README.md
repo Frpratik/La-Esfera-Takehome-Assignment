@@ -18,6 +18,12 @@ An internal helpdesk assistant for **Northwind Facilities**, a mid-sized propert
 
 It is a small, complete RAG service: ingestion pipeline, FastAPI backend, a chat UI, a SQL store for logs and feedback, a one-command Docker deployment, an evaluation harness, and a documented debugging drill. All data is synthetic.
 
+<p align="center">
+  <img src="docs/images/chat-ui.png" width="640" alt="Chat UI: the two example questions from the brief answered with a cited chunk, source chips with retrieval scores, response time and thumbs up/down feedback; an off-topic question is refused with I don't know">
+  <br>
+  <sub>The chat UI after <code>docker compose up</code>: cited answers, the retrieved sources with their scores, latency, 👍/👎 feedback, and a plain "I don't know" for anything the policies do not cover.</sub>
+</p>
+
 ## At a glance
 
 | What | Result |
