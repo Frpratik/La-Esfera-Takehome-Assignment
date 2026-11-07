@@ -82,3 +82,10 @@ def test_each_app_has_its_own_registry(settings: Settings) -> None:
         first.post("/ask", json={"question": "hotel"}, headers=HEADERS)
         assert sample(first, "helpdesk_http_requests_total", route="/ask", status="200") == 1
         assert sample(second, "helpdesk_http_requests_total", route="/ask", status="200") == 0
+
+
+def test_feedback_ratings_are_counted(client: TestClient) -> None:
+    qid = client.post("/ask", json={"question": "hotel limit"}, headers=HEADERS).json()["query_id"]
+    client.post("/feedback", json={"query_id": qid, "rating": "down"}, headers=HEADERS)
+    assert sample(client, "helpdesk_feedback_total", rating="down") == 1
+    assert sample(client, "helpdesk_feedback_total", rating="up") == 0

@@ -56,6 +56,12 @@ class Metrics:
             "Estimated LLM spend in US dollars.",
             registry=self.registry,
         )
+        self.feedback = Counter(
+            "helpdesk_feedback",
+            "Thumbs up/down ratings received, by rating.",
+            ["rating"],
+            registry=self.registry,
+        )
         self.cache = Counter(
             "helpdesk_cache_requests",
             "Answer-cache lookups by result (hit, miss or error).",

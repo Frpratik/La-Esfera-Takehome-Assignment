@@ -294,6 +294,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             db.add(Feedback(query_id=body.query_id, rating=body.rating))
         db.commit()
+        metrics.feedback.labels(body.rating).inc()
         return FeedbackResponse(query_id=body.query_id, rating=body.rating)
 
     @app.get("/stats", response_model=StatsResponse, dependencies=[Depends(require_api_key)])
