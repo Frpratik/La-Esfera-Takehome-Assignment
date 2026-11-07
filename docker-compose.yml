@@ -1,4 +1,4 @@
-# Policy Helpdesk: postgres + api + frontend.
+# Policy Helpdesk: postgres + redis + api + frontend.
 #   cp .env.example .env && docker compose up --build
 name: policy-helpdesk
 
@@ -18,6 +18,16 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    # Answer cache only: nothing to persist, bounded memory, least-recently-used eviction.
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build: .
     env_file:
@@ -26,9 +36,13 @@ services:
     environment:
       # Overrides DATABASE_URL from .env (which points at SQLite for local dev).
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-helpdesk}:${POSTGRES_PASSWORD:-helpdesk}@postgres:5432/${POSTGRES_DB:-helpdesk}
+      # Cache on by default in Docker. Set DOCKER_CACHE_URL= (empty) in .env to turn it off.
+      CACHE_URL: ${DOCKER_CACHE_URL-redis://redis:6379/0}
     depends_on:
       postgres:
         condition: service_healthy # tables are created at startup, so the DB must be ready
+      redis:
+        condition: service_started # the cache is optional: never block the API on it
     ports:
       - "8000:8000"
     healthcheck:
