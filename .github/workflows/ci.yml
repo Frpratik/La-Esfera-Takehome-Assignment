@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly real-LLM check: catches provider drift (e.g. a retired model) with no code change.
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
@@ -105,3 +109,68 @@ jobs:
         run: >
           docker run --rm -v "$PWD/ops/prometheus:/etc/prom" --entrypoint promtool
           prom/prometheus:v2.55.1 check rules /etc/prom/alerts.yml
+
+  llm-key:
+    name: Check for the Groq API key secret
+    # Secrets are never exposed to pull requests, so the real-LLM job only runs on main.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - id: check
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -n "$GROQ_API_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GROQ_API_KEY secret is not set; skipping the real-LLM evaluation"
+          fi
+
+  eval-llm:
+    name: Evaluation (real LLM, Groq gpt-oss-20b)
+    needs: [eval, llm-key]
+    if: needs.llm-key.outputs.available == 'true'
+    runs-on: ubuntu-latest
+    env:
+      LLM_PROVIDER: openai
+      LLM_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      LLM_MODEL: openai/gpt-oss-20b
+      PRICE_PER_1K_PROMPT: "0.000075"
+      PRICE_PER_1K_COMPLETION: "0.0003"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install dependencies
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install -r requirements-dev.txt
+      - name: Cache embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2
+      - name: Build index
+        run: python -m ingest.build_index
+      # A real LLM can word an answer differently between runs, so these gates allow one
+      # miss per set while still failing on a real regression (wrong model, broken prompt).
+      - name: Main eval set (quality gate)
+        run: >
+          python -m eval.run_eval --output eval-llm-main.json
+          --min-correctness 0.85 --min-refusal 0.66 --min-top1 1.0
+      - name: Regression set (quality gate)
+        run: >
+          python -m eval.run_eval --questions eval/regression_questions.json
+          --output eval-llm-regression.json --min-correctness 0.85 --min-top1 1.0
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results-real-llm
+          path: eval-llm-*.json
