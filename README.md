@@ -2,6 +2,7 @@
 
 **Ask a question about company policy. Get an answer grounded in the policy documents, with its sources, or an honest "I don't know".**
 
+[![CI](https://github.com/Frpratik/La-Esfera-Takehome-Assignment/actions/workflows/ci.yml/badge.svg)](https://github.com/Frpratik/La-Esfera-Takehome-Assignment/actions/workflows/ci.yml)
 ![Python 3.11](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![React + TypeScript](https://img.shields.io/badge/React_+_TypeScript-20232A?logo=react&logoColor=61DAFB)
@@ -20,6 +21,7 @@ It is a small, complete RAG service: ingestion pipeline, FastAPI backend, a chat
 | **Answer correctness** (12-question eval) | **100%** with the offline mock and with a real LLM (Groq `openai/gpt-oss-20b`) |
 | **Refusals** on unanswerable questions | **100%** say exactly "I don't know" |
 | **Cost and latency** on the real LLM | about **$0.0001** and **1.8 s** per question |
+| **Repeated questions** (Redis cache) | **1.2 s → 11 ms** on the real LLM, and $0 per repeat |
 | **Debugging drill** (travel policy incident) | real-LLM correctness **25% → 100%** after two root-cause fixes |
 | **Deployment** | `docker compose up --build`: API, chat UI and Postgres, health-checked |
 
@@ -32,6 +34,7 @@ It is a small, complete RAG service: ingestion pipeline, FastAPI backend, a chat
 - [Configuration](#configuration)
 - [Evaluation](#evaluation)
 - [Debugging drill](#debugging-drill)
+- [Observability, caching and CI](#observability-caching-and-ci)
 - [Design note](#design-note)
 - [Project structure](#project-structure)
 - [Local development](#local-development)
@@ -42,9 +45,10 @@ It is a small, complete RAG service: ingestion pipeline, FastAPI backend, a chat
 ![Architecture: the browser loads the React frontend and calls the FastAPI API; the API reads the FAISS index files, logs to Postgres and calls a mock or Groq LLM](docs/images/architecture.svg)
 
 - **Frontend** (React + TypeScript, served by nginx): chat history, loading and error states, source citations, 👍/👎 feedback.
-- **API** (FastAPI): `/ask`, `/feedback`, `/stats`, `/health`, protected by an `X-API-Key` header.
+- **API** (FastAPI): `/ask`, `/feedback`, `/stats` (protected by an `X-API-Key` header), plus `/health` and Prometheus `/metrics`.
 - **Index files** (FAISS + `metadata.json`): the searchable knowledge. Vectors, chunk text and a fingerprint of every policy.
 - **Postgres**: the logs. One row per question (answer, sources, latency, tokens, cost) and one per rating.
+- **Redis**: an optional cache that answers repeated questions without retrieval or an LLM call (on in Docker).
 - **LLM**: an offline deterministic **mock** by default, or any **OpenAI-compatible** provider (Groq, Ollama) behind the same interface.
 
 ## How it works
@@ -83,7 +87,8 @@ docker compose up --build
 |---|---|
 | Chat UI | http://localhost:8080 |
 | API + interactive docs | http://localhost:8000/docs |
-| Postgres | internal only (`postgres:5432`) |
+| Prometheus metrics | http://localhost:8000/metrics |
+| Postgres, Redis | internal only (`postgres:5432`, `redis:6379`) |
 
 Try it from a terminal:
 
@@ -111,13 +116,15 @@ Good to know:
 | `POST /feedback` | `X-API-Key` | `{query_id, rating: "up" \| "down"}`; re-voting replaces the rating |
 | `GET /stats` | `X-API-Key` | count, p50/p95 latency, total and average estimated cost, thumbs-up rate |
 | `GET /health` | none | `ok` / `stale` / `degraded`, index size, embedder, build time, LLM provider |
+| `GET /metrics` | none (internal network) | Prometheus metrics: requests, latency histogram, answer outcomes, tokens, cost, cache, index state |
 
 ```json
 {
   "query_id": 12,
   "answer": "The hotel limit is $180 per night. [travel-1]",
   "sources": [{ "doc": "travel", "chunk_id": "travel-1", "score": 0.59 }],
-  "latency_ms": 24.8
+  "latency_ms": 24.8,
+  "cached": false
 }
 ```
 
@@ -140,6 +147,7 @@ Everything is configured through environment variables; `.env.example` lists the
 | `USE_HASH_EMBEDDER` | `false` | force the offline hashing embedder |
 | `MOCK_SCORE_THRESHOLD`, `MOCK_SCORE_THRESHOLD_HASH` | `0.35`, `0.10` | mock's "I don't know" cut-offs per embedder |
 | `DATABASE_URL` | SQLite file | overridden to Postgres inside Docker |
+| `CACHE_URL`, `CACHE_TTL_SECONDS` | empty (off), `3600` | Redis answer cache; Docker sets `redis://redis:6379/0` unless `DOCKER_CACHE_URL=` is set empty |
 | `CORS_ORIGINS` | `localhost:5173,8080` | browser origins allowed to call the API |
 
 ## Evaluation
@@ -198,6 +206,40 @@ The regression set (`eval/regression_questions.json`, 8 travel reimbursement and
 
 The full write-up (symptoms, evidence, root causes, a rejected hypothesis, before/after numbers and reproduction steps) is in **[docs/DEBUGGING.md](docs/DEBUGGING.md)**.
 
+## Observability, caching and CI
+
+### Prometheus metrics and alerts
+
+`GET /metrics` exposes request counts and a latency histogram (labelled by route template, so random URLs cannot create unbounded series), answer outcomes (`answered` / `refused` / `llm_error`), LLM tokens and estimated cost, 👍/👎 counts, cache hits and misses, and whether the index is loaded and fresh.
+
+[`ops/prometheus/alerts.yml`](ops/prometheus/alerts.yml) defines 11 alert rules, validated with `promtool`: service down, index missing, 5xx rate, LLM provider failures, p95 latency, stale index, refusal spike, thumbs-down spike, daily spend, auth failures and cache errors. Thresholds and reasoning are in **[docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)**.
+
+### Redis cache for repeated questions
+
+The cache key is the normalised question (case, spacing and trailing punctuation ignored) **plus the index build time** and the retrieval and LLM settings. When a policy changes and the index is rebuilt, old answers are never served again, so the cache cannot reintroduce the stale-answer bug from the debugging drill. A Redis outage only costs the speed-up: requests still succeed and `helpdesk_cache_requests_total{result="error"}` counts it.
+
+Measured with `python -m eval.bench_cache` (12 eval questions, each asked twice):
+
+| LLM | First ask (miss) | Repeat (hit) | Speed-up |
+|---|---|---|---|
+| Mock (offline) | 24 ms | 8 ms | 3× |
+| Groq `openai/gpt-oss-20b` | 1.2 s | 11 ms | about 115×, and no LLM cost |
+
+End-to-end medians in-process; most of the remaining hit time is the log write to the database, which still happens for every request.
+
+### Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and pull request:
+
+| Job | What it checks |
+|---|---|
+| Lint and unit tests | `ruff check`, `ruff format --check`, policy word counts, `pytest` |
+| Evaluation | builds the MiniLM index and runs both eval sets with **quality gates**: the main set must stay at 100% correctness, top-1 and refusal accuracy; the regression set at 100% top-1 |
+| Frontend | TypeScript type check and production build |
+| Config | `docker compose config` with only `.env.example`, and `promtool check rules` on the alerts |
+
+The eval runner's `--min-correctness`, `--min-top1` and `--min-refusal` options exit non-zero below the minimum, so a quality regression fails the build instead of only being printed.
+
 ## Design note
 
 ### Components
@@ -218,6 +260,7 @@ The full write-up (symptoms, evidence, root causes, a rejected hypothesis, befor
 - **`LLMClient` interface (mock | OpenAI-compatible)**: the default needs no network or key; one client covers Groq and Ollama.
 - **SQLAlchemy with Postgres / SQLite**: Postgres in Docker, SQLite for local dev and tests, one code path.
 - **Docker Compose**: health-checked startup order; configured from one `.env`.
+- **Prometheus metrics + optional Redis cache** (stretch): standard, cheap to run, and both fail safe.
 
 ### Main risks
 - **Stale index**: policies change but the index doesn't. Mitigation: hash comparison at startup and in `/health`, auto-rebuild.
@@ -243,15 +286,17 @@ The full write-up (symptoms, evidence, root causes, a rejected hypothesis, befor
 
 ```
 app/             FastAPI service: main.py (endpoints), retriever.py, bm25.py, llm.py, prompt.py,
-                 models.py, db.py, stats.py, cost.py, config.py, debug.py
+                 models.py, db.py, stats.py, cost.py, cache.py, metrics.py, config.py, debug.py
 ingest/          chunker.py, embedder.py, index_store.py, build_index.py, freshness.py,
                  documents.py, validate_policies.py
 data/policies/   the 8 synthetic policies
 frontend/        React + TypeScript chat UI (src/App.tsx, src/api.ts, src/components/)
-eval/            questions.json, regression_questions.json, run_eval.py, saved results
+eval/            questions.json, regression_questions.json, run_eval.py, bench_cache.py, results
 tests/           pytest suite
-docs/            DEBUGGING.md and the diagrams in this README
+docs/            DEBUGGING.md, OBSERVABILITY.md and the diagrams in this README
+ops/prometheus/  alert rules and an example scrape config
 docker/          API container entrypoint
+.github/         CI workflow
 Dockerfile, docker-compose.yml, .env.example
 ```
 
@@ -272,6 +317,8 @@ Set `USE_HASH_EMBEDDER=true` to build the index fully offline.
 | Check index freshness | `python -m ingest.freshness` |
 | Inspect retrieval for a question | `python -m app.debug "Who approves a laptop replacement?"` |
 | Validate policy word counts | `python -m ingest.validate_policies` |
+| Run the eval with quality gates | `python -m eval.run_eval --min-correctness 1.0 --min-top1 1.0` |
+| Benchmark the cache | `python -m eval.bench_cache --redis redis://localhost:6390/0` (flushes that Redis) |
 
 **Frontend dev server** (http://localhost:5173), with the API running on port 8000:
 
@@ -293,4 +340,5 @@ npm run dev
 - **No automated frontend tests**; the UI was verified manually in a browser.
 - **Stats are all-time** and percentiles are computed in Python, which is fine at this scale; Postgres `percentile_cont` would be the next step.
 - **No database migrations**: tables are created at startup.
-- **Not done (optional stretch)**: CI workflow, Prometheus `/metrics`, Redis caching.
+- **CI evaluates with the mock LLM only**; the real-LLM numbers come from manual runs, since CI would need a provider key as a secret.
+- **No Grafana dashboard or log shipping**: metrics and alert rules are provided, but not a running Prometheus stack.
