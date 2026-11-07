@@ -14,9 +14,11 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from redis import RedisError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.cache import AnswerCache, RedisCache, cache_key, make_cache
 from app.config import Settings, get_settings
 from app.cost import estimate_cost_usd
 from app.db import init_db, make_engine, make_session_factory
@@ -72,13 +74,14 @@ def _log_query(
     sources: list[Source],
     latency_ms: float,
     cost_usd: float,
+    provider: str | None = None,
 ) -> int | None:
     """Persist the query; return its id, or None if the DB is unavailable.
 
     Logging must not take the service down: the user still gets their answer.
     """
     app_state = request.app.state
-    provider = app_state.llm.name
+    provider = provider or app_state.llm.name
     row = QueryLog(
         question=question,
         answer=result.answer,
@@ -113,6 +116,21 @@ def _route_label(request: Request) -> str:
     """
     route = request.scope.get("route")
     return getattr(route, "path", "unmatched")
+
+
+def _answer_cache_key(
+    question: str, retriever: Retriever, settings: Settings, llm_name: str
+) -> str:
+    """Cache key covering everything that can change the answer, including the index build."""
+    return cache_key(
+        question,
+        index_built_at=retriever.metadata["built_at"],
+        embedder=retriever.metadata["embedder"],
+        retrieval_mode=settings.retrieval_mode,
+        top_k=settings.top_k,
+        llm=llm_name,
+        model=settings.llm_model if llm_name != "mock" else "mock",
+    )
 
 
 def _load_retriever(settings: Settings) -> Retriever | None:
@@ -177,6 +195,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             llm.score_threshold = settings.mock_score_threshold_hash
         app.state.retriever = retriever
         app.state.llm = llm
+        cache: AnswerCache = app.state.cache
+        if isinstance(cache, RedisCache) and not cache.ping():
+            logger.warning("answer cache unreachable at startup; answering uncached")
         yield
 
     app = FastAPI(title="Northwind Facilities Helpdesk", lifespan=lifespan)
@@ -192,6 +213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = make_engine(settings.database_url)
     app.state.session_factory = make_session_factory(app.state.engine)
     app.state.metrics = metrics = Metrics()
+    app.state.cache = make_cache(settings.cache_url, settings.cache_ttl_seconds)
 
     @app.middleware("http")
     async def record_request_metrics(
@@ -243,6 +265,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
         return JSONResponse(body, status_code=200 if retriever else 503)
 
+    def _answer_from_cache(
+        request: Request, question: str, hit: dict, started: float
+    ) -> AskResponse:
+        """Serve a cached answer: no retrieval, no LLM call, so no tokens and no cost."""
+        sources = [Source(**s) for s in hit["sources"]]
+        result = LLMResult(hit["answer"], 0, 0)
+        metrics.answers.labels("refused" if _is_refusal(result.answer) else "answered").inc()
+        latency_ms = round((time.perf_counter() - started) * 1000, 1)
+        logger.info("ask q=%r cache=hit answer=%r", question[:80], result.answer[:80])
+        top = hit.get("top_score")
+        chunks = [RetrievedChunk("", "", "", top)] if top is not None else []
+        query_id = _log_query(
+            request, question, result, chunks, sources, latency_ms, 0.0, provider="cache"
+        )
+        return AskResponse(
+            query_id=query_id,
+            answer=result.answer,
+            sources=sources,
+            latency_ms=latency_ms,
+            cached=True,
+        )
+
     @app.post("/ask", response_model=AskResponse, dependencies=[Depends(require_api_key)])
     def ask(body: AskRequest, request: Request) -> AskResponse:
         """Answer a question from the policy documents."""
@@ -250,6 +294,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         retriever: Retriever | None = request.app.state.retriever
         if retriever is None:
             raise HTTPException(503, "index not built; run: python -m ingest.build_index")
+
+        llm_name = request.app.state.llm.name
+        cache: AnswerCache = request.app.state.cache
+        key = _answer_cache_key(body.question, retriever, request.app.state.settings, llm_name)
+        if cache.enabled:
+            hit, lookup_failed = None, False
+            try:
+                hit = cache.get(key)
+            except RedisError as exc:  # a broken cache must never break answering
+                logger.warning("cache lookup failed: %s", exc)
+                metrics.cache.labels("error").inc()
+                lookup_failed = True
+            if hit is not None:
+                metrics.cache.labels("hit").inc()
+                return _answer_from_cache(request, body.question, hit, started)
+            if not lookup_failed:
+                metrics.cache.labels("miss").inc()
 
         chunks = retriever.retrieve(body.question)
         try:
@@ -279,6 +340,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             result.answer[:80],
         )
         query_id = _log_query(request, body.question, result, chunks, sources, latency_ms, cost_usd)
+        if cache.enabled:
+            payload = {
+                "answer": result.answer,
+                "sources": [s.model_dump() for s in sources],
+                "top_score": max((c.score for c in chunks), default=None),
+            }
+            try:
+                cache.set(key, payload)
+            except RedisError as exc:
+                logger.warning("cache store failed: %s", exc)
+                metrics.cache.labels("error").inc()
         return AskResponse(
             query_id=query_id, answer=result.answer, sources=sources, latency_ms=latency_ms
         )

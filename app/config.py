@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # Rebuild the index at startup if documents changed since it was built (else just warn).
     auto_rebuild_index: bool = True
 
+    # Answer cache (Redis). Empty URL = caching off.
+    cache_url: str = ""
+    cache_ttl_seconds: int = 3600
+
     # Database
     database_url: str = "sqlite:///./helpdesk.db"
 

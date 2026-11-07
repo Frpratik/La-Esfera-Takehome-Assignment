@@ -31,6 +31,8 @@ class AskResponse(BaseModel):
     answer: str
     sources: list[Source]
     latency_ms: float
+    # True when the answer came from the cache (no retrieval or LLM call was made).
+    cached: bool = False
 
 
 class FeedbackRequest(BaseModel):
