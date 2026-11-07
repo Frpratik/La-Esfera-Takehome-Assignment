@@ -4,6 +4,37 @@ The API exposes Prometheus metrics at `GET /metrics`. This note lists what is me
 scrape it, and which alerts I would set and why. The rules themselves live in
 [`ops/prometheus/alerts.yml`](../ops/prometheus/alerts.yml) and pass `promtool check rules`.
 
+## See the metrics: Prometheus + Grafana
+
+The industry-standard open-source setup is **Prometheus** (scrapes and stores metrics, evaluates
+alert rules) with **Grafana** (dashboards) and **Alertmanager** (routes firing alerts to Slack,
+PagerDuty or email). Hosted alternatives work on the same idea: Grafana Cloud, Datadog, New Relic,
+CloudWatch, often fed through OpenTelemetry. This repo ships the first two as an opt-in Docker
+Compose profile:
+
+```bash
+docker compose --profile monitoring up -d
+```
+
+| Tool | URL | What you see |
+|---|---|---|
+| Grafana | http://localhost:3000 | the **Northwind Helpdesk** dashboard opens as the home page (read-only without login; admin login from `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`) |
+| Prometheus | http://localhost:9090 | raw queries, scrape targets (*Status → Targets*) and alert states (*Alerts*: inactive, pending or firing) |
+| Raw metrics | http://localhost:8000/metrics | the text Prometheus scrapes every 15 s |
+
+Everything is provisioned from files, so nothing is clicked together by hand:
+[`ops/grafana/provisioning/`](../ops/grafana/provisioning) connects the Prometheus data source and
+loads [`ops/grafana/dashboards/helpdesk.json`](../ops/grafana/dashboards/helpdesk.json).
+
+The dashboard shows: questions answered, p95 `/ask` latency, refusal rate, index freshness, cache
+hit ratio, thumbs-up rate, estimated LLM cost and 5xx rate as headline numbers, plus graphs of
+requests by route and status, p50/p95 latency, answer outcomes, cache lookups, LLM tokens and
+feedback.
+
+Alertmanager is not included: Prometheus evaluates the rules and shows their state on its *Alerts*
+page, but routing notifications needs a real destination (Slack webhook, PagerDuty key), which is
+environment-specific.
+
 ## Metrics
 
 | Metric | Type | Labels | What it tells you |
@@ -55,4 +86,4 @@ On Git Bash for Windows, prefix the command with `MSYS_NO_PATHCONV=1` so the con
 
 ## Not covered
 
-Logs are printed to stdout (`docker compose logs api`), with one line per `/ask` naming the retrieved chunks and scores. There is no log shipping, tracing or dashboard here; in production I would add a Grafana dashboard over these metrics and ship logs to a central store.
+Logs are printed to stdout (`docker compose logs api`), with one line per `/ask` naming the retrieved chunks and scores. There is no log shipping, tracing or Alertmanager here; in production I would ship logs to a central store (for example Loki next to Grafana), add OpenTelemetry tracing across retrieval and the LLM call, and route alerts through Alertmanager.

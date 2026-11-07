@@ -7,6 +7,10 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![React + TypeScript](https://img.shields.io/badge/React_+_TypeScript-20232A?logo=react&logoColor=61DAFB)
 ![FAISS](https://img.shields.io/badge/vector_index-FAISS-4B5563)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-answer_cache-DC382D?logo=redis&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-metrics_%2B_alerts-E6522C?logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-dashboard-F46800?logo=grafana&logoColor=white)
 ![Docker Compose](https://img.shields.io/badge/docker_compose-one_command-2496ED?logo=docker&logoColor=white)
 ![Runs offline](https://img.shields.io/badge/runs-offline_by_default-2EA44F)
 
@@ -89,6 +93,8 @@ docker compose up --build
 | API + interactive docs | http://localhost:8000/docs |
 | Prometheus metrics | http://localhost:8000/metrics |
 | Postgres, Redis | internal only (`postgres:5432`, `redis:6379`) |
+
+Add dashboards with `docker compose --profile monitoring up -d`: **Grafana** at http://localhost:3000 and **Prometheus** at http://localhost:9090 (see [Observability](#observability-caching-and-ci)).
 
 Try it from a terminal:
 
@@ -208,7 +214,15 @@ The full write-up (symptoms, evidence, root causes, a rejected hypothesis, befor
 
 ## Observability, caching and CI
 
-### Prometheus metrics and alerts
+### Prometheus metrics, Grafana dashboard and alerts
+
+```bash
+docker compose --profile monitoring up -d
+```
+
+Grafana (http://localhost:3000) opens on the provisioned **Northwind Helpdesk** dashboard; Prometheus is at http://localhost:9090. Both are configured from files in [`ops/`](ops), so the dashboard is code, not clicks. Screenshot after about 2½ minutes of demo traffic with the mock LLM:
+
+![Grafana dashboard: questions answered, p95 latency, refusal rate, index freshness, cache hit ratio, thumbs-up rate, LLM cost, error rate, plus request, latency, outcome and cache graphs](docs/images/grafana-dashboard.jpg)
 
 `GET /metrics` exposes request counts and a latency histogram (labelled by route template, so random URLs cannot create unbounded series), answer outcomes (`answered` / `refused` / `llm_error`), LLM tokens and estimated cost, 👍/👎 counts, cache hits and misses, and whether the index is loaded and fresh.
 
@@ -235,6 +249,7 @@ End-to-end medians in-process; most of the remaining hit time is the log write t
 |---|---|
 | Lint and unit tests | `ruff check`, `ruff format --check`, policy word counts, `pytest` |
 | Evaluation | builds the MiniLM index and runs both eval sets with **quality gates**: the main set must stay at 100% correctness, top-1 and refusal accuracy; the regression set at 100% top-1 |
+| Evaluation with a real LLM | the same eval against **Groq `openai/gpt-oss-20b`** when the `GROQ_API_KEY` repository secret is set; runs on `main`, on demand and weekly (to catch provider drift such as a retired model); gates allow one varying answer per set |
 | Frontend | TypeScript type check and production build |
 | Config | `docker compose config` with only `.env.example`, and `promtool check rules` on the alerts |
 
@@ -340,5 +355,5 @@ npm run dev
 - **No automated frontend tests**; the UI was verified manually in a browser.
 - **Stats are all-time** and percentiles are computed in Python, which is fine at this scale; Postgres `percentile_cont` would be the next step.
 - **No database migrations**: tables are created at startup.
-- **CI evaluates with the mock LLM only**; the real-LLM numbers come from manual runs, since CI would need a provider key as a secret.
-- **No Grafana dashboard or log shipping**: metrics and alert rules are provided, but not a running Prometheus stack.
+- **The real-LLM CI job needs the `GROQ_API_KEY` repository secret**; without it the job is skipped (pull requests never get secrets).
+- **No Alertmanager, log shipping or tracing**: Prometheus evaluates the alert rules and Grafana shows the dashboard, but routing notifications needs an environment-specific destination.
