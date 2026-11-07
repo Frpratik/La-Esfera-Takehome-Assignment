@@ -71,5 +71,43 @@ services:
       - "8080:80"
     restart: unless-stopped
 
+  # --- Optional monitoring stack: docker compose --profile monitoring up -d ---
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["monitoring"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./ops/prometheus:/etc/prometheus:ro # scrape config + the alert rules
+      - promdata:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    profiles: ["monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Read-only dashboards without logging in, for local use. Turn off outside a laptop.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/helpdesk.json
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro # datasource + dashboard loader
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro # dashboards as code
+    ports:
+      - "3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  promdata:
