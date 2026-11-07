@@ -194,6 +194,25 @@ def format_table(results: list[CaseResult], metrics: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def check_thresholds(metrics: dict[str, Any], minimums: dict[str, float | None]) -> list[str]:
+    """Return one message per metric below its required minimum (empty list = all good).
+
+    Lets CI fail on a quality regression instead of just printing numbers. A minimum set for a
+    metric that was not measured (e.g. refusal accuracy on a set with no unanswerable
+    questions) counts as a failure, so a misconfigured gate cannot pass silently.
+    """
+    failures = []
+    for name, minimum in minimums.items():
+        if minimum is None:
+            continue
+        value = metrics.get(name)
+        if value is None:
+            failures.append(f"{name}: not measured (required >= {minimum})")
+        elif value < minimum:
+            failures.append(f"{name}: {value} < required {minimum}")
+    return failures
+
+
 def rescore(report: dict[str, Any], questions: list[dict[str, Any]]) -> dict[str, Any]:
     """Re-score a saved report's answers against ``questions`` without calling the API.
 
@@ -247,6 +266,10 @@ def main() -> int:
         type=Path,
         help="re-score a saved results file with the current scoring (no API calls)",
     )
+    gates = parser.add_argument_group("quality gates (exit code 1 when below)")
+    gates.add_argument("--min-correctness", type=float, help="minimum answer correctness 0-1")
+    gates.add_argument("--min-top1", type=float, help="minimum top-1 document rate 0-1")
+    gates.add_argument("--min-refusal", type=float, help="minimum refusal accuracy 0-1")
     args = parser.parse_args()
     # LLM answers can contain characters (e.g. U+202F) that a Windows console or a redirected
     # cp1252 stdout cannot encode; that crashed the run while printing the table.
@@ -282,7 +305,17 @@ def main() -> int:
 
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"\nwrote {args.output}")
-    return 0
+    failures = check_thresholds(
+        report["metrics"],
+        {
+            "answer_correctness": args.min_correctness,
+            "top1_doc_rate": args.min_top1,
+            "refusal_accuracy": args.min_refusal,
+        },
+    )
+    for failure in failures:
+        print(f"QUALITY GATE FAILED: {failure}", file=sys.stderr)
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

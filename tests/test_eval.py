@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from eval.run_eval import (
+    check_thresholds,
     facts_present,
     format_table,
     is_refusal,
@@ -211,3 +212,26 @@ def test_rescore_reapplies_scoring_without_calling_the_api() -> None:
     assert report["cases"][0]["passed"] is True
     assert report["metrics"]["answer_correctness"] == 1.0
     assert report["metrics"]["est_cost_per_query_usd"] == 0.0001
+
+
+# --- quality gates (used by CI) ------------------------------------------------------------
+
+
+def test_thresholds_pass_when_metrics_meet_the_minimums() -> None:
+    metrics = {"answer_correctness": 1.0, "top1_doc_rate": 0.9, "refusal_accuracy": None}
+    assert check_thresholds(metrics, {"answer_correctness": 1.0, "top1_doc_rate": 0.9}) == []
+
+
+def test_thresholds_report_each_metric_below_its_minimum() -> None:
+    failures = check_thresholds(
+        {"answer_correctness": 0.75, "top1_doc_rate": 1.0}, {"answer_correctness": 0.8}
+    )
+    assert failures == ["answer_correctness: 0.75 < required 0.8"]
+
+
+def test_a_minimum_on_an_unmeasured_metric_fails() -> None:
+    assert check_thresholds({"refusal_accuracy": None}, {"refusal_accuracy": 1.0})
+
+
+def test_unset_minimums_are_ignored() -> None:
+    assert check_thresholds({"answer_correctness": 0.0}, {"answer_correctness": None}) == []
