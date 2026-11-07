@@ -1,4 +1,4 @@
-"""FastAPI application: /ask, /feedback, /stats, /health.
+"""FastAPI application: /ask, /feedback, /stats, /health, /metrics.
 
 Run with: uvicorn app.main:create_app --factory
 """
@@ -8,12 +8,12 @@ from __future__ import annotations
 import logging
 import secrets
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -21,7 +21,9 @@ from app.config import Settings, get_settings
 from app.cost import estimate_cost_usd
 from app.db import init_db, make_engine, make_session_factory
 from app.llm import LLMError, LLMResult, MockLLMClient, get_llm_client
+from app.metrics import Metrics
 from app.models import Feedback, QueryLog
+from app.prompt import REFUSAL
 from app.retriever import RetrievedChunk, Retriever
 from app.schemas import (
     AskRequest,
@@ -69,6 +71,7 @@ def _log_query(
     chunks: list[RetrievedChunk],
     sources: list[Source],
     latency_ms: float,
+    cost_usd: float,
 ) -> int | None:
     """Persist the query; return its id, or None if the DB is unavailable.
 
@@ -85,9 +88,7 @@ def _log_query(
         provider=provider,
         prompt_tokens=result.prompt_tokens,
         completion_tokens=result.completion_tokens,
-        est_cost_usd=estimate_cost_usd(
-            app_state.settings, provider, result.prompt_tokens, result.completion_tokens
-        ),
+        est_cost_usd=cost_usd,
     )
     try:
         with app_state.session_factory() as session:
@@ -97,6 +98,21 @@ def _log_query(
     except SQLAlchemyError:
         logger.exception("failed to log query")
         return None
+
+
+def _is_refusal(answer: str) -> bool:
+    """True for the refusal string, tolerating case and a trailing period from real LLMs."""
+    return answer.strip().replace("’", "'").rstrip(".").lower() == REFUSAL.lower()
+
+
+def _route_label(request: Request) -> str:
+    """The matched route template ("/ask"), never the raw URL.
+
+    Raw paths would let anyone create unlimited metric series by requesting random URLs, so
+    anything that matched no route is grouped under "unmatched".
+    """
+    route = request.scope.get("route")
+    return getattr(route, "path", "unmatched")
 
 
 def _load_retriever(settings: Settings) -> Retriever | None:
@@ -175,6 +191,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.engine = make_engine(settings.database_url)
     app.state.session_factory = make_session_factory(app.state.engine)
+    app.state.metrics = metrics = Metrics()
+
+    @app.middleware("http")
+    async def record_request_metrics(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """Count and time every request, labelled by route template and status."""
+        started = time.perf_counter()
+        status = 500  # if the handler raises, the client receives a 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        finally:
+            route = _route_label(request)
+            metrics.http_requests.labels(request.method, route, str(status)).inc()
+            metrics.http_latency.labels(request.method, route).observe(
+                time.perf_counter() - started
+            )
 
     @app.get("/health")
     def health(request: Request) -> JSONResponse:
@@ -221,7 +256,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             result = request.app.state.llm.generate(body.question, chunks)
         except LLMError as exc:
             logger.error("llm failure: %s", exc)
+            metrics.answers.labels("llm_error").inc()
             raise HTTPException(502, "language model request failed") from exc
+        provider = request.app.state.llm.name
+        cost_usd = estimate_cost_usd(
+            request.app.state.settings, provider, result.prompt_tokens, result.completion_tokens
+        )
+        metrics.answers.labels("refused" if _is_refusal(result.answer) else "answered").inc()
+        metrics.llm_tokens.labels("prompt").inc(result.prompt_tokens)
+        metrics.llm_tokens.labels("completion").inc(result.completion_tokens)
+        metrics.llm_cost.inc(cost_usd)
 
         # Sources are always returned (even for "I don't know") so scores can be inspected.
         sources = [Source(doc=c.doc, chunk_id=c.chunk_id, score=round(c.score, 4)) for c in chunks]
@@ -234,7 +278,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ", ".join(f"{c.chunk_id}:{c.score:.2f}" for c in chunks),
             result.answer[:80],
         )
-        query_id = _log_query(request, body.question, result, chunks, sources, latency_ms)
+        query_id = _log_query(request, body.question, result, chunks, sources, latency_ms, cost_usd)
         return AskResponse(
             query_id=query_id, answer=result.answer, sources=sources, latency_ms=latency_ms
         )
@@ -256,5 +300,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def stats(db: Session = Depends(get_db)) -> StatsResponse:
         """Usage, latency percentiles, estimated cost and thumbs-up rate."""
         return compute_stats(db)
+
+    @app.get("/metrics", include_in_schema=False)
+    def prometheus_metrics(request: Request) -> Response:
+        """Prometheus scrape endpoint (unauthenticated, like /health: keep it on the internal
+        network). Index gauges are refreshed at scrape time so a policy edited while the
+        service runs shows up without waiting for a request."""
+        retriever: Retriever | None = request.app.state.retriever
+        metrics.index_loaded.set(1 if retriever else 0)
+        if retriever is not None:
+            fresh = check_freshness(
+                retriever.metadata,
+                settings.policies_dir,
+                settings.chunk_size,
+                settings.chunk_overlap,
+            )
+            metrics.index_stale.set(1 if fresh.stale else 0)
+        payload, content_type = metrics.render()
+        return Response(content=payload, media_type=content_type)
 
     return app
