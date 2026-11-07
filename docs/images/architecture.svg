@@ -22,6 +22,10 @@
 <rect x="235" y="250" width="160" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
 <text x="315.0" y="268" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Index files</text>
 <text x="315.0" y="288" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">FAISS + metadata</text>
+<rect x="460" y="250" width="170" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="545.0" y="268" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Redis</text>
+<text x="545.0" y="288" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">Repeated answers</text>
+<path d="M 425 198 L 445 198 L 445 278 L 458 278" fill="none" stroke="#73726C" stroke-width="1.5" marker-end="url(#arrow)"/>
 <rect x="330" y="380" width="200" height="56" rx="8" fill="#F1EFE8" stroke="#888780" stroke-width="1"/>
 <text x="430.0" y="398" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#2C2C2A">LLM: mock or Groq</text>
 <text x="430.0" y="418" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">Writes the answer</text>
